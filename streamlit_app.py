@@ -245,55 +245,147 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
     }
 
 
-def build_ai_review_prompt(symbol: str, name: str, review_date: str, summary: dict) -> str:
+def indicator_snapshot(candles: list[dict]) -> dict:
+    closes = [float(bar["close"]) for bar in candles]
+    highs = [float(bar["high"]) for bar in candles]
+    lows = [float(bar["low"]) for bar in candles]
+    volumes = [float(bar["volume"]) for bar in candles]
+    vol_ma5 = sum(volumes[-5:]) / 5 if len(volumes) >= 5 else None
+    vol_ratio = volumes[-1] / vol_ma5 if vol_ma5 else None
+
+    rsi = None
+    if len(closes) > 14:
+        changes = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+        gains = [max(change, 0) for change in changes]
+        losses = [max(-change, 0) for change in changes]
+        avg_gain = sum(gains[:14]) / 14
+        avg_loss = sum(losses[:14]) / 14
+        for i in range(14, len(gains)):
+            avg_gain = (avg_gain * 13 + gains[i]) / 14
+            avg_loss = (avg_loss * 13 + losses[i]) / 14
+        rsi = 100.0 if avg_loss == 0 else 100 - 100 / (1 + avg_gain / avg_loss)
+
+    k = d = 50.0
+    for i in range(len(closes)):
+        start = max(0, i - 8)
+        high_n, low_n = max(highs[start:i + 1]), min(lows[start:i + 1])
+        rsv = 50.0 if high_n == low_n else (closes[i] - low_n) / (high_n - low_n) * 100
+        k = (2 / 3) * k + (1 / 3) * rsv
+        d = (2 / 3) * d + (1 / 3) * k
+
+    def ema(values: list[float], period: int) -> list[float | None]:
+        output: list[float | None] = [None] * len(values)
+        if len(values) < period:
+            return output
+        current = sum(values[:period]) / period
+        output[period - 1] = current
+        alpha = 2 / (period + 1)
+        for i in range(period, len(values)):
+            current = values[i] * alpha + current * (1 - alpha)
+            output[i] = current
+        return output
+
+    fast, slow = ema(closes, 12), ema(closes, 26)
+    macd = [None if fast[i] is None or slow[i] is None else fast[i] - slow[i]
+            for i in range(len(closes))]
+    first = next((i for i, value in enumerate(macd) if value is not None), None)
+    macd_hist = None
+    if first is not None:
+        signal_tail = ema([value or 0.0 for value in macd[first:]], 9)
+        if signal_tail and signal_tail[-1] is not None and macd[-1] is not None:
+            macd_hist = macd[-1] - signal_tail[-1]
+    return {"vol_ma5": vol_ma5, "vol_ratio": vol_ratio, "rsi": rsi,
+            "k": k, "d": d, "macd_hist": macd_hist,
+            "three_day_low": min(lows[-3:]) if len(lows) >= 3 else None}
+
+
+def market_status_for(symbol: str, period: str, review_date: str) -> str:
+    is_taiwan = bool(re.fullmatch(r"\d{4,6}[A-Z]?", symbol))
+    benchmark = "^TWII" if is_taiwan else "SPY"
+    benchmark_name = "加權指數" if is_taiwan else "S&P 500 ETF（SPY）"
+    try:
+        benchmark_period = "1y" if period == "1mo" else period
+        history = load_history(benchmark, benchmark_period)["candles"]
+        history = [bar for bar in history if bar["date"] <= review_date]
+        if len(history) < 20:
+            return f"{benchmark_name}資料不足，無法判定月線趨勢"
+        closes = [float(bar["close"]) for bar in history]
+        close = closes[-1]
+        ma20 = sum(closes[-20:]) / 20
+        above20 = close >= ma20
+        if len(closes) < 60:
+            return f"{benchmark_name}收盤 {close:.2f}，{'站上' if above20 else '跌破'}月線 {ma20:.2f}；季線資料不足"
+        ma60 = sum(closes[-60:]) / 60
+        above60 = close >= ma60
+        status = "多頭排列" if ma20 >= ma60 else "未呈多頭排列"
+        return (f"{benchmark_name}收盤 {close:.2f}，{'站上' if above20 else '跌破'}月線 {ma20:.2f}、"
+                f"{'站上' if above60 else '跌破'}季線 {ma60:.2f}，{status}")
+    except Exception:
+        return f"{benchmark_name}資料無法取得；請勿推測大盤狀態"
+
+
+def build_ai_review_prompt(
+    symbol: str, name: str, review_date: str, summary: dict,
+    candles: list[dict], market_status: str,
+) -> str:
     """Build a copy-ready, evidence-bound next-session review prompt."""
     checks = "\n".join(
         f"- [{'x' if passed else ' '}] {label}：{'成立' if passed else '未成立'}"
         for label, passed in summary["_檢核清單"]
-    )
-    ma_lines = "、".join(
-        f"{period}MA {summary['_六線'][period]:.2f}"
-        if summary["_六線"][period] is not None else f"{period}MA 資料不足"
-        for period in (5, 10, 20, 60, 120, 240)
     )
     slopes = "、".join(f"{period}MA {slope}" for period, slope in summary["_均線斜率"].items())
     support_levels = "；".join(
         f"{level['名稱']} {level['價格']:.2f}" for level in summary["_防守候選價"]
     )
     defense = summary["_關鍵防守價"]
-    return f"""你是嚴格遵守「老王短線戰法」的覆盤助手。請只根據以下資料分析，不得補造行情、訊號或日期；資料不足時明確寫「資料不足」。遵守先風險控管、破線減碼、條件未成立不預判的紀律，將已知事實與你的推論分開。
+    indicators = indicator_snapshot(candles)
 
-## 標的與行情
-- 標的：{symbol}｜{name}
-- 覆盤資料日：{summary['資料日期']}（使用者回顧日期：{review_date}）
-- 收盤：{summary['收盤價']:.2f}；當日漲跌：{summary['_當日漲跌幅']:+.2f}%
-- 成交量／25 日均量：{summary['_成交量／25日均量']}
-- 均線：{ma_lines}
-- 均線斜率：{slopes}
+    def fmt(value, digits=2):
+        return f"{value:.{digits}f}" if value is not None else "資料不足"
+
+    vol_ratio = f"{indicators['vol_ratio']:.2f}x" if indicators["vol_ratio"] is not None else "資料不足"
+    return f"""你是一位嚴格執行「老王技術分析戰法」的台股／美股操盤教練。請根據以下【真實盤後數據】進行無情且客觀的紀律覆盤，嚴禁憑感覺猜測、補造數據或把推論說成事實。資料不足時請明確標示「資料不足」。
+
+【標的資訊】
+- 股票代號與名稱：{symbol}（{name}）
+- 大盤基準狀態：{market_status}
+- 最新收盤價：{summary['收盤價']:.2f}（漲跌幅：{summary['_當日漲跌幅']:+.2f}%）
+- 盤後資料日：{summary['資料日期']}（回顧日期：{review_date}）
+
+【關鍵技術指標與六線數據】
+- 均線系統：5MA={fmt(summary['_六線'][5])} | 10MA={fmt(summary['_六線'][10])} | 20MA(月線)={fmt(summary['_六線'][20])} | 60MA(季線)={fmt(summary['_六線'][60])}
+- 半年線／年線：120MA={fmt(summary['_六線'][120])} | 240MA={fmt(summary['_六線'][240])}；均線斜率：{slopes}
+- 量能狀態：今日成交量={int(candles[-1]['volume']):,}（5日均量={fmt(indicators['vol_ma5'], 0)}，量比={vol_ratio}）
+- 指標狀態：RSI(14)={fmt(indicators['rsi'])} | KD(9,3,3)（K={indicators['k']:.2f}, D={indicators['d']:.2f}） | MACD柱狀體={fmt(indicators['macd_hist'])}
 - 系統操作結論：{summary['操作結論']}
-- 系統建議持股：{summary['建議持股水位']}；保留現金：{summary['保留現金']}
-- 目前持續中的結構訊號：{summary['持續中狀態']}
+- 系統建議持股水位：{summary['建議持股水位']}；保留現金：{summary['保留現金']}
+- 持續中的結構訊號：{summary['持續中狀態']}
 
-## 戰法診斷清單
+【老王戰法診斷清單】
+1. 趨勢位階：收盤是否站穩月線／季線？均線是否呈多頭排列？實際檢核：
 {checks}
+   均線斜率：{slopes}
+2. 型態與支撐壓力：是否突破前高頸線，或跌破關鍵防守價？不得推定未提供的頸線或型態。
+3. 量價配合：上漲是否有量（大於5日均量），下跌是否量縮？量比以今日成交量除以5日均量計算。
 
-## 下一交易日的關鍵防守價
-- 優先防守價：{defense['價格']:.2f}（{defense['名稱']}）。若收盤有效跌破，請依老王紀律評估減碼或停損；區分盤中跌破與收盤確認，不要把短暫刺穿當成確定訊號。
-- 其他可核對的候選支撐：{support_levels or '目前沒有可用的結構支撐資料'}。
-- 不得把均線或缺口支撐描述成保證有效；若候選支撐都已失守，請明確指出目前沒有可靠支撐。
+【下一交易日關鍵防守價（停損點）】
+- 系統參考價：{defense['價格']:.2f}（{defense['名稱']}）。請依據上方結構判斷是否合適，不得把支撐描述成保證有效。
+- 其他候選支撐：{support_levels or '目前沒有可用的結構支撐資料'}。
+- 近三日最低價參考：{fmt(indicators['three_day_low'])}；請區分盤中跌破與收盤確認，勿因短暫刺穿就斷言趨勢反轉。
+- 若候選支撐皆已失守，明確指出目前沒有可靠支撐，不要虛構替代價位。
 
-## 下一交易日觀察重點
-1. 開盤後價格相對關鍵防守價、10MA 與 20MA 的位置；若仍在均線下方，先觀察能否收復，不以盤中反彈直接判定轉強。
-2. 收盤是否守住關鍵防守價，以及是否站回 5MA／10MA／20MA；逐項核對，不用單根 K 棒宣告趨勢反轉。
-3. 成交量相對 25 日均量是否放大，放量上漲或放量下跌分開解讀。
-4. 未封閉缺口、天量成功換手低點與關鍵長紅低點是否被觸及或收盤跌破；只判斷資料列出的有效訊號。
+【下一交易日觀察重點】
+1. 價格相對關鍵防守價、10MA、20MA 的位置；仍在均線下方時，觀察能否收復，不以盤中反彈直接判定轉強。
+2. 收盤是否守住關鍵防守價及三日低點，是否站回 5MA／10MA／20MA。
+3. 漲跌時成交量相對 5 日均量的變化，分辨價漲量增、價跌量縮。
+4. 未封閉缺口、天量成功換手低點與關鍵長紅低點是否被觸及或有效跌破。
+5. KD／MACD 是否轉強或轉弱，只作輔助訊號，不單獨取代價格與均線紀律。
 
-## 請按此格式回答
-1. **操作建議**：續抱、減碼、停損觀望或等待確認，並引用上面的規則與數據說明理由；勿給出無依據的確定預測。
-2. **戰法檢核**：逐項解讀清單中的成立／未成立項目，指出最重要的多空訊號及是否互相衝突。
-3. **下一交易日關鍵防守價**：重述價格與依據，列明「盤中觸及」及「收盤跌破」各自應如何觀察。
-4. **觀察重點**：列出 3 至 5 項可驗證的條件，並說明每項成立或失守後的應對。
-5. **資料限制**：明確指出本提示詞只包含截至覆盤資料日的日線，不能假設尚未發生的下一交易日行情。"""
+【輸出要求】
+1. 給予明確的【操作建議燈號】：綠燈買進／續抱、黃燈觀望、紅燈減碼／停損；說明燈號依據，若多空訊號衝突要指出。
+2. 條列指出「符合的買進條件」與「風險警訊」，逐項引用數據，不得只給結論。
+3. 明確給出下一交易日的【關鍵防守價（停損點）】與【觀察重點】，分別說明盤中觸及和收盤確認時的應對。
+4. 嚴格遵守既有老王紀律，不因單一指標過熱追高，不攤平破線部位；不得預測尚未發生的行情。"""
 
 
 def add_to_watchlist() -> None:
@@ -374,11 +466,14 @@ def main() -> None:
     payload["candles"] = historical_candles
     payload["as_of"] = as_of_text
     selected_summary = summarize_lao_wang(historical_candles)
+    market_status = market_status_for(symbol, data_period, as_of_text)
     review_prompt = build_ai_review_prompt(
         symbol=symbol,
         name=payload["name"],
         review_date=as_of_text,
         summary=selected_summary,
+        candles=historical_candles,
+        market_status=market_status,
     )
 
     html = PAGE.read_text(encoding="utf-8")
