@@ -16,6 +16,7 @@ import yfinance as yf
 
 PAGE = Path(__file__).parent / "v0" / "gemini-code-1795528199482.html"
 MARKER = "const STREAMLIT_PAYLOAD = null;"
+PROMPT_MARKER = "const STREAMLIT_REVIEW_PROMPT = null;"
 WATCHLIST = {
     "0050.TW": "元大台灣50",
     "2330.TW": "台積電",
@@ -372,15 +373,24 @@ def main() -> None:
         return
     payload["candles"] = historical_candles
     payload["as_of"] = as_of_text
+    selected_summary = summarize_lao_wang(historical_candles)
+    review_prompt = build_ai_review_prompt(
+        symbol=symbol,
+        name=payload["name"],
+        review_date=as_of_text,
+        summary=selected_summary,
+    )
 
     html = PAGE.read_text(encoding="utf-8")
-    if html.count(MARKER) != 1:
+    if html.count(MARKER) != 1 or html.count(PROMPT_MARKER) != 1:
         st.error("HTML 資料接口不存在或重複，無法安全載入儀表板。")
         return
     # Escape closing tags and HTML specials before embedding JSON in a script.
     payload["range"] = {"1mo":"1m", "3mo":"3m", "6mo":"6m"}.get(data_period, data_period)
     data = json.dumps(payload, ensure_ascii=True).replace("<", "\\u003c")
     html = html.replace(MARKER, f"const STREAMLIT_PAYLOAD = {data};", 1)
+    prompt_data = json.dumps(review_prompt, ensure_ascii=True).replace("<", "\\u003c")
+    html = html.replace(PROMPT_MARKER, f"const STREAMLIT_REVIEW_PROMPT = {prompt_data};", 1)
     components.html(html, height=1300, scrolling=True)
 
     st.subheader("📋 觀察名單總覽")
@@ -444,18 +454,6 @@ def main() -> None:
         use_container_width=True,
         hide_index=True,
     )
-
-    selected_summary = summarize_lao_wang(historical_candles)
-    review_prompt = build_ai_review_prompt(
-        symbol=symbol,
-        name=payload["name"],
-        review_date=as_of_text,
-        summary=selected_summary,
-    )
-    st.subheader("🤖 專屬 AI 覆盤提示詞")
-    st.caption("內容已帶入目前標的與回顧日期的診斷資料；點提示詞區塊右上角的複製圖示，再貼到任意 AI 對話視窗。")
-    st.code(review_prompt, language="text")
-
 
 if __name__ == "__main__":
     main()
