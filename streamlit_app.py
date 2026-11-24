@@ -104,6 +104,13 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
     three_above = above[5] and above[10] and above[20]
     four_above = three_above and above[60]
     six_above = four_above and above[120] and above[240]
+    streak20 = 0
+    for row in frame.iloc[::-1].itertuples():
+        ma20_value = getattr(row, "ma20")
+        if math.isfinite(float(ma20_value)) and float(row.close) >= float(ma20_value):
+            streak20 += 1
+        else:
+            break
     # Match the detail dashboard: retain the latest breakout until a close
     # falls below the low of its triggering high-volume candle.
     active_volume_swap = None
@@ -128,11 +135,13 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
         if float(current["low"]) > float(previous["high"]) * 1.001 and not (
             frame.iloc[i + 1:]["low"] <= float(previous["high"])
         ).any():
-            open_bull_gaps.append({"date": current["date"], "idx": i})
+            open_bull_gaps.append({"date": current["date"], "idx": i,
+                                   "bottom": float(previous["high"]), "top": float(current["low"])})
         if float(current["high"]) < float(previous["low"]) * 0.999 and not (
             frame.iloc[i + 1:]["high"] >= float(previous["low"])
         ).any():
-            open_bear_gaps.append({"date": current["date"], "idx": i})
+            open_bear_gaps.append({"date": current["date"], "idx": i,
+                                   "bottom": float(current["high"]), "top": float(previous["low"])})
     frame["avg_volume_25"] = frame["volume"].rolling(25).mean()
     active_key_long_red = None
     for row in frame.iloc[24:].itertuples():
@@ -176,6 +185,45 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
         position, conclusion = 40, "⚖️ 均線整理：觀察區間低點與關鍵長紅低點"
     if active_volume_swap:
         conclusion += f"；🔥 天量成功換手（訊號 {active_volume_swap['date']}，未跌破天量低點）"
+    previous_close = float(prev["close"])
+    daily_change_pct = (close / previous_close - 1) * 100 if previous_close else 0.0
+    avg_volume_25 = float(frame["volume"].rolling(25).mean().iloc[-1])
+    supports = [
+        {"名稱": "10MA", "價格": float(last["ma10"])},
+        {"名稱": "20MA", "價格": float(last["ma20"])},
+    ]
+    if active_volume_swap:
+        supports.append({"名稱": f"天量成功換手低點（{active_volume_swap['date']}）",
+                         "價格": active_volume_swap["low"]})
+    if active_key_long_red:
+        supports.append({"名稱": f"關鍵長紅低點（{active_key_long_red['date']}）",
+                         "價格": active_key_long_red["low"]})
+    supports.extend({"名稱": f"未封閉多方缺口下緣（{gap['date']}）", "價格": gap["bottom"]}
+                    for gap in open_bull_gaps)
+    valid_supports = [level for level in supports
+                      if math.isfinite(level["價格"]) and level["價格"] <= close]
+    primary_support = max(valid_supports, key=lambda level: level["價格"]) if valid_supports else {
+        "名稱": "最近交易日低點（參考價）", "價格": float(last["low"])
+    }
+    slope_status = lambda period: (
+        "上彎" if float(last[f"ma{period}"]) > float(frame.iloc[-4][f"ma{period}"])
+        else "下彎或持平"
+    ) if math.isfinite(float(last[f"ma{period}"])) and math.isfinite(float(frame.iloc[-4][f"ma{period}"])) else "資料不足"
+    checks = [
+        ("收盤站上 5MA／10MA／20MA（三陽開泰）", three_above),
+        ("收盤站上 5MA／10MA／20MA／60MA（四線偏多）", four_above),
+        ("連續站上月線至少 3 日", streak20 >= 3),
+        ("收盤跌破 5MA／10MA／20MA（三聲無奈）", three_below),
+        ("收盤跌破 5MA／10MA／20MA／60MA（四面楚歌）", four_below),
+        ("收盤跌破六條均線", six_below),
+        ("假突破訊號", false_breakout),
+        ("跌破近 20 日天量 K 棒低點", bearish_volume_break),
+        ("天量成功換手仍有效", active_volume_swap is not None),
+        ("關鍵長紅支撐仍有效", active_key_long_red is not None),
+        ("仍有未封閉多方缺口", bool(open_bull_gaps)),
+        ("仍有未封閉空方缺口", bool(open_bear_gaps)),
+        ("孤島反轉訊號仍有效", island_bear is not None),
+    ]
     return {
         "操作結論": conclusion,
         "持續中狀態": "；".join(active_status) if active_status else "目前無未解除的結構訊號",
@@ -185,7 +233,66 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
         "5MA / 10MA": f"{last['ma5']:.2f} / {last['ma10']:.2f}",
         "20MA / 60MA": f"{last['ma20']:.2f} / {last['ma60']:.2f}",
         "資料日期": last["date"],
+        "_當日漲跌幅": daily_change_pct,
+        "_成交量／25日均量": f"{int(last['volume']):,} / {avg_volume_25:,.0f}",
+        "_六線": {period: float(last[f"ma{period}"]) if math.isfinite(float(last[f"ma{period}"])) else None
+                  for period in (5, 10, 20, 60, 120, 240)},
+        "_均線斜率": {period: slope_status(period) for period in (5, 10, 20, 60)},
+        "_檢核清單": checks,
+        "_防守候選價": supports,
+        "_關鍵防守價": primary_support,
     }
+
+
+def build_ai_review_prompt(symbol: str, name: str, review_date: str, summary: dict) -> str:
+    """Build a copy-ready, evidence-bound next-session review prompt."""
+    checks = "\n".join(
+        f"- [{'x' if passed else ' '}] {label}：{'成立' if passed else '未成立'}"
+        for label, passed in summary["_檢核清單"]
+    )
+    ma_lines = "、".join(
+        f"{period}MA {summary['_六線'][period]:.2f}"
+        if summary["_六線"][period] is not None else f"{period}MA 資料不足"
+        for period in (5, 10, 20, 60, 120, 240)
+    )
+    slopes = "、".join(f"{period}MA {slope}" for period, slope in summary["_均線斜率"].items())
+    support_levels = "；".join(
+        f"{level['名稱']} {level['價格']:.2f}" for level in summary["_防守候選價"]
+    )
+    defense = summary["_關鍵防守價"]
+    return f"""你是嚴格遵守「老王短線戰法」的覆盤助手。請只根據以下資料分析，不得補造行情、訊號或日期；資料不足時明確寫「資料不足」。遵守先風險控管、破線減碼、條件未成立不預判的紀律，將已知事實與你的推論分開。
+
+## 標的與行情
+- 標的：{symbol}｜{name}
+- 覆盤資料日：{summary['資料日期']}（使用者回顧日期：{review_date}）
+- 收盤：{summary['收盤價']:.2f}；當日漲跌：{summary['_當日漲跌幅']:+.2f}%
+- 成交量／25 日均量：{summary['_成交量／25日均量']}
+- 均線：{ma_lines}
+- 均線斜率：{slopes}
+- 系統操作結論：{summary['操作結論']}
+- 系統建議持股：{summary['建議持股水位']}；保留現金：{summary['保留現金']}
+- 目前持續中的結構訊號：{summary['持續中狀態']}
+
+## 戰法診斷清單
+{checks}
+
+## 下一交易日的關鍵防守價
+- 優先防守價：{defense['價格']:.2f}（{defense['名稱']}）。若收盤有效跌破，請依老王紀律評估減碼或停損；區分盤中跌破與收盤確認，不要把短暫刺穿當成確定訊號。
+- 其他可核對的候選支撐：{support_levels or '目前沒有可用的結構支撐資料'}。
+- 不得把均線或缺口支撐描述成保證有效；若候選支撐都已失守，請明確指出目前沒有可靠支撐。
+
+## 下一交易日觀察重點
+1. 開盤後價格相對關鍵防守價、10MA 與 20MA 的位置；若仍在均線下方，先觀察能否收復，不以盤中反彈直接判定轉強。
+2. 收盤是否守住關鍵防守價，以及是否站回 5MA／10MA／20MA；逐項核對，不用單根 K 棒宣告趨勢反轉。
+3. 成交量相對 25 日均量是否放大，放量上漲或放量下跌分開解讀。
+4. 未封閉缺口、天量成功換手低點與關鍵長紅低點是否被觸及或收盤跌破；只判斷資料列出的有效訊號。
+
+## 請按此格式回答
+1. **操作建議**：續抱、減碼、停損觀望或等待確認，並引用上面的規則與數據說明理由；勿給出無依據的確定預測。
+2. **戰法檢核**：逐項解讀清單中的成立／未成立項目，指出最重要的多空訊號及是否互相衝突。
+3. **下一交易日關鍵防守價**：重述價格與依據，列明「盤中觸及」及「收盤跌破」各自應如何觀察。
+4. **觀察重點**：列出 3 至 5 項可驗證的條件，並說明每項成立或失守後的應對。
+5. **資料限制**：明確指出本提示詞只包含截至覆盤資料日的日線，不能假設尚未發生的下一交易日行情。"""
 
 
 def add_to_watchlist() -> None:
@@ -337,6 +444,17 @@ def main() -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+    selected_summary = summarize_lao_wang(historical_candles)
+    review_prompt = build_ai_review_prompt(
+        symbol=symbol,
+        name=payload["name"],
+        review_date=as_of_text,
+        summary=selected_summary,
+    )
+    st.subheader("🤖 專屬 AI 覆盤提示詞")
+    st.caption("內容已帶入目前標的與回顧日期的診斷資料；點提示詞區塊右上角的複製圖示，再貼到任意 AI 對話視窗。")
+    st.code(review_prompt, language="text")
 
 
 if __name__ == "__main__":
