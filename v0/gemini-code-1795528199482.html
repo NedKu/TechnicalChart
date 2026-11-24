@@ -73,6 +73,9 @@
       <button onclick="switchTab('encyclopedia')" id="tab-encyclopedia" class="tab-btn px-4 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">
         📚 3. 老王全套戰法 SOP 總覽庫 (7大模組)
       </button>
+      <button onclick="switchTab('ai-review')" id="tab-ai-review" class="tab-btn px-4 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">
+        🤖 4. AI 覆盤提示詞
+      </button>
     </div>
   </header>
 
@@ -366,9 +369,29 @@
     </div>
   </main>
 
+  <!-- ==================== 分頁 4：AI 覆盤提示詞 ==================== -->
+  <main id="view-ai-review" class="hidden max-w-[1400px] w-full mx-auto px-4 py-6 flex-1">
+    <section class="glass-card rounded-2xl p-5 md:p-7">
+      <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 class="text-xl font-black text-white">🤖 專屬 AI 覆盤提示詞</h2>
+          <p class="text-sm text-slate-400 mt-2">提示詞會帶入目前選取標的與回顧日期的診斷資料，可貼入任何 AI 對話視窗。</p>
+        </div>
+        <button onclick="copyAIReviewPrompt()" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition">
+          📋 一鍵複製完整提示詞
+        </button>
+      </div>
+      <div id="aiReviewCopyStatus" class="text-xs text-slate-400 mb-2" aria-live="polite">提示詞會依目前查詢資料更新。</div>
+      <textarea id="aiReviewPromptText" readonly spellcheck="false" rows="30"
+        class="w-full resize-y rounded-xl border border-slate-700 bg-slate-950 p-4 text-xs md:text-sm leading-6 text-slate-200 font-mono-num focus:outline-none focus:border-rose-500"
+        placeholder="請先在 Streamlit 側欄選取標的並載入行情，系統會產生專屬覆盤提示詞。"></textarea>
+    </section>
+  </main>
+
   <script>
     // Streamlit replaces this marker with server-fetched yfinance data.
     const STREAMLIT_PAYLOAD = null;
+    const STREAMLIT_REVIEW_PROMPT = null;
     // ==================== 全域狀態與預設觀察名單 ====================
     let watchlist = JSON.parse(localStorage.getItem('laowang_watchlist_v3')) || [
       { symbol: '2330', name: '台積電', type: '台股' },
@@ -393,6 +416,11 @@
     window.addEventListener('DOMContentLoaded', async () => {
       renderEncyclopedia();
       renderWatchlist();
+      const reviewPromptBox = document.getElementById('aiReviewPromptText');
+      if (STREAMLIT_REVIEW_PROMPT && reviewPromptBox) {
+        reviewPromptBox.value = STREAMLIT_REVIEW_PROMPT;
+        document.getElementById('aiReviewCopyStatus').textContent = '已載入目前標的與回顧日期的完整覆盤提示詞。';
+      }
       if (STREAMLIT_PAYLOAD) {
         setYears(STREAMLIT_PAYLOAD.range || '1y');
         document.getElementById('symbolInput').readOnly = true;
@@ -410,7 +438,7 @@
     });
 
     function switchTab(tabName) {
-      ['dashboard', 'simulator', 'encyclopedia'].forEach(t => {
+      ['dashboard', 'simulator', 'encyclopedia', 'ai-review'].forEach(t => {
         document.getElementById(`view-${t}`).classList.toggle('hidden', t !== tabName);
         const btn = document.getElementById(`tab-${t}`);
         if (t === tabName) {
@@ -423,6 +451,26 @@
       });
       if (tabName === 'dashboard' && currentCandles.length) {
         setTimeout(() => drawKlineChart(currentCandles, currentAnalysis), 50);
+      }
+    }
+
+    async function copyAIReviewPrompt() {
+      const promptBox = document.getElementById('aiReviewPromptText');
+      const status = document.getElementById('aiReviewCopyStatus');
+      if (!promptBox.value.trim()) {
+        status.textContent = '目前沒有提示詞，請先載入行情資料。';
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(promptBox.value);
+        status.textContent = '已複製完整提示詞，可貼到任意 AI 對話視窗。';
+      } catch (error) {
+        promptBox.focus();
+        promptBox.select();
+        const copied = document.execCommand('copy');
+        status.textContent = copied
+          ? '已複製完整提示詞，可貼到任意 AI 對話視窗。'
+          : '瀏覽器未允許自動複製；提示詞已選取，請按 Ctrl+C 複製。';
       }
     }
 
