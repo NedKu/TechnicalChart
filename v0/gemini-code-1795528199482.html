@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>老王技術分析戰法診斷器 | 完整 SOP 實戰決策版</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap');
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background-color: #0b1120;
+      color: #f1f5f9;
+    }
+    .font-mono-num {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(51, 65, 85, 0.7);
+      backdrop-filter: blur(8px);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- 頂部導覽與即時連線狀態列 -->
+  <header class="border-b border-slate-800 bg-slate-950/90 sticky top-0 z-30">
+    <div class="max-w-[1600px] mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-600 to-amber-500 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-rose-900/30">
+          王
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg font-black tracking-wide text-white">老王技術分析戰法診斷器</h1>
+            <span class="px-2 py-0.5 text-xs font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">完整 SOP 決策版</span>
+          </div>
+          <p class="text-xs text-slate-400">【老王不只三分鐘】六線位階・均線斜率・三日濾網・關鍵長紅・乖離率・孤島反轉・資金水位 SOP</p>
+        </div>
+      </div>
+
+      <!-- 數據來源狀態與工具按鈕 -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div id="dataSourceBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs">
+          <span id="sourceDot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="sourceText" class="text-slate-300">偵測 yfinance 橋接與行情報價中...</span>
+        </div>
+
+        <button onclick="downloadPythonServer()" class="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition flex items-center gap-1.5" title="下載本機 Python yfinance 橋接腳本，100% 穩定抓取最新台美股/ETF">
+          <span>⬇️ 下載 yfinance 橋接程式</span>
+        </button>
+
+        <label class="px-3 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
+          <span>📂 匯入 CSV / JSON</span>
+          <input type="file" id="csvFileInput" accept=".csv,.json" class="hidden" onchange="handleFileUpload(event)" />
+        </label>
+      </div>
+    </div>
+
+    <!-- 主分頁切換列 -->
+    <div class="max-w-[1600px] mx-auto px-4 flex gap-1 border-t border-slate-800/80 bg-slate-900/50">
+      <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn px-4 py-2.5 text-sm font-bold border-b-2 border-rose-500 text-white transition">
+        🎯 1. 實戰決策儀表板 (自動判讀怎麼操作)
+      </button>
+      <button onclick="switchTab('simulator')" id="tab-simulator" class="tab-btn px-4 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">
+        🎛️ 2. 手動條件勾選推演器 (無數據也能測)
+      </button>
+      <button onclick="switchTab('encyclopedia')" id="tab-encyclopedia" class="tab-btn px-4 py-2.5 text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition">
+        📚 3. 老王全套戰法 SOP 總覽庫 (7大模組)
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== 分頁 1：實戰決策儀表板 ==================== -->
+  <main id="view-dashboard" class="max-w-[1600px] w-full mx-auto px-4 py-5 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5">
+    
+    <!-- 左側欄：觀察名單與環境參數設定 (3欄) -->
+    <aside class="lg:col-span-3 flex flex-col gap-4">
+      <!-- 搜尋與新增觀察股 -->
+      <div class="glass-card rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-sm font-bold text-slate-200 flex items-center gap-1.5">🔍 查詢台股 / 美股 / ETF</h2>
+          <span class="text-[11px] text-slate-400">自動還原權值</span>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <input id="symbolInput" type="text" placeholder="例: 2330, 0050, NVDA, VT" 
+                 onkeydown="if(event.key==='Enter') analyzeSymbol(this.value)"
+                 class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white font-mono-num uppercase focus:outline-none focus:border-rose-500" />
+          <button onclick="analyzeSymbol(document.getElementById('symbolInput').value)" 
+                  class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold shrink-0 transition">
+            診斷
+          </button>
+        </div>
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <button onclick="addToWatchlist()" class="text-amber-400 hover:text-amber-300 font-medium">+ 加入觀察名單</button>
+          <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+            <button onclick="setYears('1m')" id="range-1m" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">1M</button>
+            <button onclick="setYears('3m')" id="range-3m" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">3M</button>
+            <button onclick="setYears('6m')" id="range-6m" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">6M</button>
+            <button onclick="setYears('1y')" id="range-1y" class="yr-btn px-2 py-0.5 rounded bg-rose-600 text-white font-bold">1Y</button>
+            <button onclick="setYears('2y')" id="range-2y" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">2Y</button>
+            <button onclick="setYears('3y')" id="range-3y" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">3Y</button>
+            <button onclick="setYears('5y')" id="range-5y" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">5Y</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 股票觀察名單 (Watchlist) -->
+      <div class="glass-card rounded-2xl p-4 flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold text-slate-200">📋 觀察名單 (Watchlist)</h3>
+          <button onclick="resetDefaultWatchlist()" class="text-[11px] text-slate-400 hover:text-slate-200">重設預設</button>
+        </div>
+        <div id="watchlistContainer" class="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+          <!-- 動態產生觀察清單 -->
+        </div>
+
+        <!-- 籌碼與大環境輔助檢核 (散戶反指標 / 大盤位階 / 處置股) -->
+        <div class="mt-4 pt-4 border-t border-slate-800 space-y-3">
+          <h4 class="text-xs font-bold text-amber-400 uppercase tracking-wider">🧭 籌碼與外部濾網微調 (選填)</h4>
+          
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">100張以下散戶持股比例 (反指標)</label>
+            <select id="retailChipSelect" onchange="reRunCurrentAnalysis()" class="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-200">
+              <option value="neutral">持平 / 未設定</option>
+              <option value="decreasing">📉 散戶持續大砍退場 (籌碼集中・利多)</option>
+              <option value="increasing">📈 散戶不斷增加接刀 (籌碼凌亂・偏空)</option>
+            </select>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <label class="text-xs text-slate-300 flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" id="dispositionCheck" onchange="reRunCurrentAnalysis()" class="rounded bg-slate-950 border-slate-700 text-rose-500" />
+              <span>目前列入分盤處置交易 (量縮警戒)</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右側主畫面：操作決策中心 + K線圖 + 完整診斷卡片 (9欄) -->
+    <section class="lg:col-span-9 flex flex-col gap-5">
+      
+      <!-- 載入狀態提示列 -->
+      <div id="statusAlertBar" class="hidden rounded-2xl p-4 border text-sm"></div>
+
+      <!-- 核心決策行動卡 (Action-First Hero Card) -->
+      <div id="actionHeroCard" class="glass-card rounded-2xl p-5 border-l-4 border-rose-500 shadow-xl">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="space-y-1.5">
+            <div class="flex flex-wrap items-center gap-2.5">
+              <span id="heroSymbol" class="text-2xl font-black text-white font-mono-num">--</span>
+              <span id="heroName" class="text-base font-bold text-slate-300">請選擇左側標的或輸入代號</span>
+              <span id="heroPrice" class="text-2xl font-black font-mono-num text-amber-400 ml-2">--</span>
+              <span id="heroChange" class="px-2 py-0.5 rounded text-xs font-bold font-mono-num bg-slate-800 text-slate-300">--</span>
+            </div>
+            <div id="heroBadges" class="flex flex-wrap gap-1.5 pt-1">
+              <!-- 型態標籤 -->
+            </div>
+          </div>
+
+          <!-- 建議資金水位儀表 -->
+          <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 min-w-[260px]">
+            <div class="flex items-center justify-between text-xs mb-1.5">
+              <span class="text-slate-400 font-bold">💰 老王建議最高持股水位</span>
+              <span id="positionPctText" class="text-base font-black font-mono-num text-emerald-400">--%</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden mb-1.5">
+              <div id="positionBar" class="h-full bg-emerald-500 transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <div class="flex justify-between text-[11px] text-slate-400">
+              <span id="cashPctText">保留現金：--%</span>
+              <span id="mindsetTag" class="font-bold text-amber-300">看撐不看壓</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 一句話操作指令與價位防守網 -->
+        <div class="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-1 xl:grid-cols-12 gap-4 items-center">
+          <div class="xl:col-span-7 bg-slate-950/70 rounded-xl p-3.5 border border-slate-800">
+            <div class="text-xs font-bold text-rose-400 mb-1">⚡ 老王操作指令 (Action SOP)</div>
+            <div id="actionCommandTitle" class="text-lg font-black text-white mb-1">等待載入真實市場資料...</div>
+            <p id="actionCommandDetail" class="text-xs text-slate-300 leading-relaxed">
+              請點擊左側觀察名單（如 2330、0050、NVDA）或匯入本機 yfinance CSV 檔案，系統將自動計算六條均線、均線斜率、三日站穩濾網、乖離率與關鍵 K 棒攻防點位。
+            </p>
+          </div>
+
+          <!-- 四大關鍵價位防守儀表 -->
+          <div class="xl:col-span-5 grid grid-cols-2 gap-2.5">
+            <div class="bg-slate-950/70 rounded-xl p-2.5 border border-slate-800">
+              <div class="text-[11px] text-slate-400">極短線減碼一半線 (5MA)</div>
+              <div id="level5MA" class="text-sm font-black font-mono-num text-sky-400 mt-0.5">--</div>
+              <div id="slope5MA" class="text-[10px] text-slate-500">斜率：--</div>
+            </div>
+            <div class="bg-slate-950/70 rounded-xl p-2.5 border border-slate-800">
+              <div class="text-[11px] text-slate-400">一條線波段出場線 (10MA)</div>
+              <div id="level10MA" class="text-sm font-black font-mono-num text-amber-400 mt-0.5">--</div>
+              <div id="slope10MA" class="text-[10px] text-slate-500">斜率：--</div>
+            </div>
+            <div class="bg-slate-950/70 rounded-xl p-2.5 border border-slate-800">
+              <div class="text-[11px] text-slate-400">關鍵長紅低點 / 天量防守</div>
+              <div id="levelKeyLow" class="text-sm font-black font-mono-num text-rose-400 mt-0.5">--</div>
+              <div id="levelKeyMid" class="text-[10px] text-slate-500">長紅中關：--</div>
+            </div>
+            <div class="bg-slate-950/70 rounded-xl p-2.5 border border-slate-800">
+              <div class="text-[11px] text-slate-400">中期月線 / 季線支撐壓力</div>
+              <div id="level20_60MA" class="text-sm font-black font-mono-num text-purple-400 mt-0.5">--</div>
+              <div id="level120_240MA" class="text-[10px] text-slate-500">半年/年線：--</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 互動 K 線與六均線 / 缺口 / 關鍵K棒圖表 -->
+      <div class="glass-card rounded-2xl p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-bold text-white">📈 老王戰法多圖層 K 線診斷圖</h3>
+            <span id="chartRangeLabel" class="text-xs text-slate-400 font-mono-num"></span>
+          </div>
+          <!-- 均線圖層開關 -->
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <label class="flex items-center gap-1 cursor-pointer text-sky-400"><input type="checkbox" checked onchange="toggleMALayer('ma5')" /> 5MA</label>
+            <label class="flex items-center gap-1 cursor-pointer text-amber-400"><input type="checkbox" checked onchange="toggleMALayer('ma10')" /> 10MA</label>
+            <label class="flex items-center gap-1 cursor-pointer text-purple-400"><input type="checkbox" checked onchange="toggleMALayer('ma20')" /> 20MA(月)</label>
+            <label class="flex items-center gap-1 cursor-pointer text-emerald-400"><input type="checkbox" checked onchange="toggleMALayer('ma60')" /> 60MA(季)</label>
+            <label class="flex items-center gap-1 cursor-pointer text-pink-400"><input type="checkbox" checked onchange="toggleMALayer('ma120')" /> 120MA(半年)</label>
+            <label class="flex items-center gap-1 cursor-pointer text-orange-400"><input type="checkbox" checked onchange="toggleMALayer('ma240')" /> 240MA(年)</label>
+          </div>
+        </div>
+
+        <div class="relative w-full h-[380px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+          <canvas id="klineCanvas" class="w-full h-full block"></canvas>
+          <div id="chartTooltip" class="hidden absolute pointer-events-none bg-slate-900/95 border border-slate-700 rounded-lg p-2.5 text-xs shadow-xl z-10 font-mono-num"></div>
+        </div>
+        <div class="mt-3 rounded-xl border border-slate-800 bg-slate-950 p-2">
+          <div id="indicatorReadings" class="grid grid-cols-1 sm:grid-cols-3 gap-2 px-1 pt-1"></div>
+          <canvas id="indicatorCanvas" class="w-full h-[360px] block"></canvas>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mt-2 text-[11px] text-slate-400">
+          <div class="flex flex-wrap gap-3">
+            <span>🟢 綠色矩形：未封閉多方缺口 (支撐)</span>
+            <span>🔴 紅色矩形：未封閉空方缺口 (壓力)</span>
+            <span>🟡 黃色虛線：近20日天量低點 (跌破兇多吉少)</span>
+            <span>🔵 藍色虛線：關鍵爆量長紅低點</span>
+          </div>
+          <span>滑鼠移至 K 棒可檢視每日六線與乖離率</span>
+        </div>
+      </div>
+
+      <!-- 六大維度自動拆解診斷報告 -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- 1. 六線位階、均線斜率與三日站穩濾網 -->
+        <div class="glass-card rounded-2xl p-4">
+          <h4 class="text-sm font-bold text-amber-400 mb-2.5 flex items-center gap-1.5">
+            <span>1️⃣ 六線架構、均線斜率與三日確認濾網</span>
+          </h4>
+          <div id="diagMA" class="space-y-2 text-xs text-slate-300"></div>
+        </div>
+
+        <!-- 2. 缺口理論與「聽三條聽中」胡牌判定 -->
+        <div class="glass-card rounded-2xl p-4">
+          <h4 class="text-sm font-bold text-emerald-400 mb-2.5 flex items-center gap-1.5">
+            <span>2️⃣ 缺口理論、「聽三條聽中」與孤島反轉</span>
+          </h4>
+          <div id="diagGap" class="space-y-2 text-xs text-slate-300"></div>
+        </div>
+
+        <!-- 3. 成交量、爆天量換手與關鍵 K 棒攻防 -->
+        <div class="glass-card rounded-2xl p-4">
+          <h4 class="text-sm font-bold text-rose-400 mb-2.5 flex items-center gap-1.5">
+            <span>3️⃣ 成交量結構、兇多吉少與關鍵長紅中關</span>
+          </h4>
+          <div id="diagVol" class="space-y-2 text-xs text-slate-300"></div>
+        </div>
+
+        <!-- 4. 轉折型態 (W底/M頭/頭肩頂)、正負乖離與防洗盤機制 -->
+        <div class="glass-card rounded-2xl p-4">
+          <h4 class="text-sm font-bold text-sky-400 mb-2.5 flex items-center gap-1.5">
+            <span>4️⃣ 轉折型態測距、乖離率警示與防雙巴策略</span>
+          </h4>
+          <div id="diagPattern" class="space-y-2 text-xs text-slate-300"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==================== 分頁 2：手動條件勾選推演器 ==================== -->
+  <main id="view-simulator" class="hidden max-w-[1400px] w-full mx-auto px-4 py-6 flex-1">
+    <div class="glass-card rounded-2xl p-6">
+      <div class="mb-5 border-b border-slate-800 pb-4">
+        <h2 class="text-xl font-black text-white">🎛️ 老王戰法手動條件勾選推演器</h2>
+        <p class="text-xs text-slate-400 mt-1">盤中看盤時，直接勾選您眼前 K 線圖看到的均線、缺口、成交量與型態特徵，系統立即套用老王全套 SOP 給出進出指令與持股水位。</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- 左側勾選區 -->
+        <div class="lg:col-span-7 space-y-5">
+          <div class="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+            <h3 class="text-sm font-bold text-amber-400 mb-3">A. 均線位階與斜率方向</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="above5" onchange="runManualSim()" /> 站上 5MA</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="above10" onchange="runManualSim()" /> 站上 10MA (生命線)</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="above20" onchange="runManualSim()" /> 站上 20MA (月線)</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="above60" onchange="runManualSim()" /> 站上 60MA (季線)</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="above120_240" onchange="runManualSim()" /> 站上半年線與年線</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="maSlopeUp" onchange="runManualSim()" /> 短均線斜率向上彎</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="confirm3d" onchange="runManualSim()" /> 連 3 日站穩關鍵線</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="tangledMA" onchange="runManualSim()" /> 均線極度糾結/上下雙巴</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="highBias" onchange="runManualSim()" /> 正乖離過大 (遠離5MA)</label>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+            <h3 class="text-sm font-bold text-emerald-400 mb-3">B. 跳空缺口與突破型態</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="bullGap" onchange="runManualSim()" /> 存在未封閉多方缺口</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="bearGap" onchange="runManualSim()" /> 上方有未封閉空方缺口</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="closedBearGap" onchange="runManualSim()" /> 剛封閉上方空方缺口</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="breakNeck" onchange="runManualSim()" /> 帶量突破前高頸線</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="falseBreakout" onchange="runManualSim()" /> 假突破 (跌回頸線下)</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="falseBreakdown" onchange="runManualSim()" /> 假跌破 / W底黃金右腳</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="mTopHeadShoulder" onchange="runManualSim()" /> 跌破 M頭 / 頭肩頂頸線</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="islandTop" onchange="runManualSim()" /> 高檔孤島反轉向下跳空</label>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+            <h3 class="text-sm font-bold text-rose-400 mb-3">C. 成交量、天量低點與籌碼極端值</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="highVolBreakLow" onchange="runManualSim()" /> 高檔爆天量且跌破低點</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="highVolBreakHigh" onchange="runManualSim()" /> 收復並突破天量高點</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="lowVolShrink" onchange="runManualSim()" /> 高檔創新高但腰斬量縮</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="deepBottomVol" onchange="runManualSim()" /> 跌深低檔爆天量守低點</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="kdHighDead" onchange="runManualSim()" /> KD > 80 高檔死亡交叉</label>
+              <label class="flex items-center gap-2 p-2 rounded bg-slate-900 border border-slate-800 cursor-pointer"><input type="checkbox" class="sim-chk" value="kdLowGold" onchange="runManualSim()" /> KD < 20 低檔黃金交叉</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右側推演結果 -->
+        <div class="lg:col-span-5">
+          <div id="simResultBox" class="bg-slate-950 border border-slate-700 rounded-2xl p-5 sticky top-28 space-y-4">
+            <div class="text-xs font-bold text-slate-400 uppercase">即時戰法推演輸出</div>
+            <div id="simTitle" class="text-2xl font-black text-amber-400">請勾選左側盤面條件</div>
+            <div id="simPositionBadge" class="inline-block px-3 py-1 rounded-lg bg-slate-800 text-xs font-bold text-slate-200">建議持股水位：--</div>
+            <div id="simTags" class="flex flex-wrap gap-1.5"></div>
+            <div id="simDetail" class="text-sm text-slate-300 leading-relaxed space-y-2 border-t border-slate-800 pt-3">
+              勾選條件後，系統將自動判定是否觸發「三陽開泰、聽三條聽中、大鵬展翅、兇多吉少、假突破、孤島反轉」並給出精確進出場與水位建議。
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ==================== 分頁 3：老王全套戰法 SOP 總覽庫 ==================== -->
+  <main id="view-encyclopedia" class="hidden max-w-[1400px] w-full mx-auto px-4 py-6 flex-1">
+    <div class="space-y-6" id="encyclopediaContent">
+      <!-- 由 JS 渲染完整 7 大模組 SOP -->
+    </div>
+  </main>
+
+  <script>
+    // Streamlit replaces this marker with server-fetched yfinance data.
+    const STREAMLIT_PAYLOAD = null;
+    // ==================== 全域狀態與預設觀察名單 ====================
+    let watchlist = JSON.parse(localStorage.getItem('laowang_watchlist_v3')) || [
+      { symbol: '2330', name: '台積電', type: '台股' },
+      { symbol: '0050', name: '元大台灣50', type: 'ETF' },
+      { symbol: '2317', name: '鴻海', type: '台股' },
+      { symbol: '2454', name: '聯發科', type: '台股' },
+      { symbol: 'NVDA', name: 'NVIDIA', type: '美股' },
+      { symbol: 'SPY', name: 'SPDR S&P 500', type: 'ETF' },
+      { symbol: 'QQQ', name: 'Invesco QQQ', type: 'ETF' },
+      { symbol: 'VT', name: 'Vanguard 全世界', type: 'ETF' }
+    ];
+
+    let currentSymbol = '2330';
+    let currentRange = STREAMLIT_PAYLOAD?.range || '1y';
+    let currentCandles = [];
+    let currentAnalysis = null;
+    let localServerAvailable = false;
+
+    const maLayers = { ma5: true, ma10: true, ma20: true, ma60: true, ma120: true, ma240: true };
+
+    // ==================== 初始化 ====================
+    window.addEventListener('DOMContentLoaded', async () => {
+      renderEncyclopedia();
+      renderWatchlist();
+      if (STREAMLIT_PAYLOAD) {
+        setYears(STREAMLIT_PAYLOAD.range || '1y');
+        document.getElementById('symbolInput').readOnly = true;
+        document.getElementById('symbolInput').placeholder = '請使用 Streamlit 左側選單查詢';
+        document.querySelector('button[onclick="downloadPythonServer()"]')?.remove();
+        document.querySelector('button[onclick="addToWatchlist()"]')?.remove();
+        document.querySelector('button[onclick="resetDefaultWatchlist()"]')?.remove();
+        document.querySelector('button[onclick^="analyzeSymbol(document"]')?.remove();
+        setSourceBadge('emerald', `Streamlit / yfinance (${STREAMLIT_PAYLOAD.ticker} · ${STREAMLIT_PAYLOAD.as_of || '最新'})`);
+        analyzeSymbol(STREAMLIT_PAYLOAD.symbol);
+        return;
+      }
+      await checkLocalYfinanceServer();
+      analyzeSymbol(currentSymbol);
+    });
+
+    function switchTab(tabName) {
+      ['dashboard', 'simulator', 'encyclopedia'].forEach(t => {
+        document.getElementById(`view-${t}`).classList.toggle('hidden', t !== tabName);
+        const btn = document.getElementById(`tab-${t}`);
+        if (t === tabName) {
+          btn.classList.add('border-rose-500', 'text-white');
+          btn.classList.remove('border-transparent', 'text-slate-400');
+        } else {
+          btn.classList.remove('border-rose-500', 'text-white');
+          btn.classList.add('border-transparent', 'text-slate-400');
+        }
+      });
+      if (tabName === 'dashboard' && currentCandles.length) {
+        setTimeout(() => drawKlineChart(currentCandles, currentAnalysis), 50);
+      }
+    }
+
+    function setYears(range) {
+      currentRange = range;
+      ['1m', '3m', '6m', '1y', '2y', '3y', '5y'].forEach(option => {
+        const b = document.getElementById(`range-${option}`);
+        if (option === range) {
+          b.className = 'yr-btn px-2 py-0.5 rounded bg-rose-600 text-white font-bold';
+        } else {
+          b.className = 'yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white';
+        }
+      });
+      if (currentCandles.length) {
+        reRunCurrentAnalysis();
+      }
+    }
+
+    // ==================== 1. 本機 yfinance 橋接與真實 API 抓取引擎 ====================
+    async function checkLocalYfinanceServer() {
+      try {
+        const res = await fetchWithTimeout('http://127.0.0.1:8765/health', 1200);
+        if (res && res.ok) {
+          localServerAvailable = true;
+          setSourceBadge('emerald', '已連線本機 Python yfinance (100% 最新真實行情)');
+          return true;
+        }
+      } catch (e) {}
+      localServerAvailable = false;
+      setSourceBadge('amber', '瀏覽器直連模式 (支援 Yahoo API / 匯入 CSV / 本機 yfinance)');
+      return false;
+    }
+
+    function setSourceBadge(color, text) {
+      const dot = document.getElementById('sourceDot');
+      const txt = document.getElementById('sourceText');
+      dot.className = `w-2.5 h-2.5 rounded-full bg-${color}-400`;
+      txt.textContent = text;
+    }
+
+    function fetchWithTimeout(url, ms = 5000) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('連線逾時')), ms);
+        fetch(url)
+          .then(res => { clearTimeout(timer); resolve(res); })
+          .catch(err => { clearTimeout(timer); reject(err); });
+      });
+    }
+
+    function normalizeTickers(raw) {
+      const s = raw.trim().toUpperCase();
+      if (/^\d{4,6}[A-Z]?$/.test(s)) {
+        return [`${s}.TW`, `${s}.TWO`];
+      }
+      return [s];
+    }
+
+    async function analyzeSymbol(rawSymbol) {
+      if (!rawSymbol || !rawSymbol.trim()) return;
+      const clean = rawSymbol.trim().toUpperCase().replace(/\.TW$|\.TWO$/, '');
+      currentSymbol = clean;
+      document.getElementById('symbolInput').value = clean;
+      renderWatchlist();
+
+      if (STREAMLIT_PAYLOAD) {
+        if (clean !== STREAMLIT_PAYLOAD.symbol) {
+          showAlert('info', '請使用網頁左側的 Streamlit 控制項切換標的。');
+          return;
+        }
+        hideAlert();
+        processCandlesData(STREAMLIT_PAYLOAD.candles, clean, STREAMLIT_PAYLOAD.name);
+        return;
+      }
+
+      showAlert('info', `⏳ 正在載入 <b>${clean}</b> 的真實歷史日 K 線數據 (含還原權值計算)...`);
+
+      // 軌道 A：本機 Python yfinance 伺服器
+      if (localServerAvailable || await checkLocalYfinanceServer()) {
+        try {
+          const res = await fetchWithTimeout(`http://127.0.0.1:8765/history?symbol=${encodeURIComponent(clean)}&period=5y`, 8000);
+          if (res.ok) {
+            const json = await res.json();
+            if (json.candles && json.candles.length > 30) {
+              hideAlert();
+              setSourceBadge('emerald', `本機 yfinance 即時數據 (${json.ticker})`);
+              processCandlesData(json.candles, clean, json.name || clean);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('Local yfinance server fetch failed:', err);
+        }
+      }
+
+      // 軌道 B：Yahoo Finance Chart API 多代理輪詢
+      const candidates = normalizeTickers(clean);
+      const proxies = [
+        url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        url => url
+      ];
+
+      for (const ticker of candidates) {
+        const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=5y&interval=1d&includeAdjustedClose=true`;
+        for (const wrap of proxies) {
+          try {
+            const res = await fetchWithTimeout(wrap(yfUrl), 4500);
+            if (!res.ok) continue;
+            const data = await res.json();
+            const result = data?.chart?.result?.[0];
+            if (!result || !result.timestamp) continue;
+
+            const ts = result.timestamp;
+            const quote = result.indicators.quote[0];
+            const adj = result.indicators.adjclose?.[0]?.adjclose || quote.close;
+            const candles = [];
+
+            for (let i = 0; i < ts.length; i++) {
+              if (quote.close[i] == null || quote.open[i] == null) continue;
+              const ratio = adj[i] && quote.close[i] ? (adj[i] / quote.close[i]) : 1;
+              candles.push({
+                date: new Date(ts[i] * 1000).toISOString().slice(0, 10),
+                open: +(quote.open[i] * ratio).toFixed(2),
+                high: +(quote.high[i] * ratio).toFixed(2),
+                low: +(quote.low[i] * ratio).toFixed(2),
+                close: +(quote.close[i] * ratio).toFixed(2),
+                volume: quote.volume[i] || 0
+              });
+            }
+
+            if (candles.length > 30) {
+              hideAlert();
+              setSourceBadge('emerald', `Yahoo Finance 真實行情 (${ticker})`);
+              const metaName = result.meta?.shortName || result.meta?.symbol || clean;
+              processCandlesData(candles, clean, metaName);
+              return;
+            }
+          } catch (e) {}
+        }
+      }
+
+      // 無法直接連外網時，引導使用本機 yfinance 或 CSV 匯入（絕不使用假數據）
+      showAlert('error', `
+        <div class="font-bold text-rose-300 mb-1">⚠️ 目前瀏覽器環境無法直接跨域連線 Yahoo Finance（已嚴格遵守不使用任何模擬假數據原則）</div>
+        <div class="text-xs text-slate-300 space-y-1">
+          <p>請選擇以下任一方式載入 100% 真實股市歷史數據：</p>
+          <p>1️⃣ <b>推薦（一勞永逸）</b>：點擊右上角 <span class="text-emerald-300 font-bold">「⬇️ 下載 yfinance 橋接程式」</span>，在終端機執行 <code class="bg-slate-900 px-1.5 py-0.5 rounded text-amber-300">pip install yfinance flask flask-cors && python laowang_server.py</code>，再點一次「診斷」。</p>
+          <p>2️⃣ <b>直接匯入檔案</b>：點擊右上角 <span class="text-sky-300 font-bold">「📂 匯入 CSV / JSON」</span> 上傳 <code class="bg-slate-900 px-1.5 py-0.5 rounded">yf.download("2330.TW", period="5y").to_csv("2330.csv")</code> 產生的檔案。</p>
+          <p>3️⃣ <b>無數據先推演</b>：切換至上方 <span class="text-amber-300 font-bold">「🎛️ 2. 手動條件勾選推演器」</span> 直接勾選盤面條件。</p>
+        </div>
+      `);
+    }
+
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const text = e.target.result;
+          let candles = [];
+          if (file.name.endsWith('.json')) {
+            const parsed = JSON.parse(text);
+            candles = Array.isArray(parsed) ? parsed : (parsed.candles || []);
+          } else {
+            const lines = text.trim().split(/\r?\n/);
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+            const idxDate = headers.findIndex(h => h.includes('date'));
+            const idxOpen = headers.findIndex(h => h === 'open');
+            const idxHigh = headers.findIndex(h => h === 'high');
+            const idxLow = headers.findIndex(h => h === 'low');
+            const idxAdj = headers.findIndex(h => h.includes('adj'));
+            const idxClose = headers.findIndex(h => h === 'close');
+            const idxVol = headers.findIndex(h => h.includes('vol'));
+
+            for (let i = 1; i < lines.length; i++) {
+              const cols = lines[i].split(',');
+              if (cols.length < 5) continue;
+              const rawC = parseFloat(cols[idxClose]);
+              const adjC = idxAdj >= 0 ? parseFloat(cols[idxAdj]) : rawC;
+              if (isNaN(rawC)) continue;
+              const ratio = (adjC && rawC) ? (adjC / rawC) : 1;
+              candles.push({
+                date: cols[idxDate >= 0 ? idxDate : 0].slice(0, 10),
+                open: +(parseFloat(cols[idxOpen]) * ratio).toFixed(2),
+                high: +(parseFloat(cols[idxHigh]) * ratio).toFixed(2),
+                low: +(parseFloat(cols[idxLow]) * ratio).toFixed(2),
+                close: +(rawC * ratio).toFixed(2),
+                volume: idxVol >= 0 ? (parseFloat(cols[idxVol]) || 0) : 0
+              });
+            }
+          }
+          if (candles.length < 25) throw new Error('資料筆數不足 25 筆');
+          const sym = file.name.replace(/\.(csv|json)$/i, '').toUpperCase();
+          currentSymbol = sym;
+          hideAlert();
+          setSourceBadge('emerald', `已載入真實檔案：${file.name} (${candles.length} 交易日)`);
+          processCandlesData(candles, sym, sym);
+        } catch (err) {
+          showAlert('error', `檔案解析失敗：${err.message}。請確認欄位包含 Date, Open, High, Low, Close, Volume。`);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function downloadPythonServer() {
+      const pyCode = `# -*- coding: utf-8 -*-
+# 老王技術分析戰法診斷器 - 本機 yfinance 真實行情橋接伺服器
+# 安裝套件：pip install yfinance flask flask-cors
+# 啟動方式：python laowang_server.py
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import yfinance as yf
+
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok"})
+
+@app.route('/history')
+def history():
+    raw_sym = request.args.get('symbol', '2330').strip().upper()
+    period = request.args.get('period', '5y')
+    candidates = [f"{raw_sym}.TW", f"{raw_sym}.TWO"] if raw_sym.isdigit() else [raw_sym]
+
+    for ticker in candidates:
+        try:
+            tk = yf.Ticker(ticker)
+            # auto_adjust=True 自動處理除權息還原缺口，符合老王戰法要求
+            df = tk.history(period=period, interval="1d", auto_adjust=True)
+            if df is not None and len(df) > 25:
+                candles = []
+                for idx, row in df.iterrows():
+                    candles.append({
+                        "date": idx.strftime("%Y-%m-%d"),
+                        "open": round(float(row["Open"]), 2),
+                        "high": round(float(row["High"]), 2),
+                        "low": round(float(row["Low"]), 2),
+                        "close": round(float(row["Close"]), 2),
+                        "volume": int(row["Volume"])
+                    })
+                info_name = raw_sym
+                try:
+                    info_name = tk.info.get("shortName") or raw_sym
+                except Exception:
+                    pass
+                return jsonify({"ticker": ticker, "name": info_name, "candles": candles})
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
+
+    return jsonify({"error": f"找不到 {raw_sym} 的有效歷史資料"}), 404
+
+if __name__ == '__main__':
+    print("=== 老王技術分析 yfinance 橋接伺服器已啟動於 http://127.0.0.1:8765 ===")
+    app.run(host='127.0.0.1', port=8765)
+`;
+      const blob = new Blob([pyCode], { type: 'text/x-python;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'laowang_server.py';
+      a.click();
+    }
+
+    function showAlert(type, html) {
+      const bar = document.getElementById('statusAlertBar');
+      bar.classList.remove('hidden', 'bg-sky-950/80', 'border-sky-700', 'text-sky-200', 'bg-rose-950/80', 'border-rose-700', 'text-rose-200');
+      if (type === 'info') {
+        bar.classList.add('bg-sky-950/80', 'border-sky-700', 'text-sky-200');
+      } else {
+        bar.classList.add('bg-rose-950/80', 'border-rose-700', 'text-rose-200');
+      }
+      bar.innerHTML = html;
+    }
+
+    function hideAlert() {
+      document.getElementById('statusAlertBar').classList.add('hidden');
+    }
+
+    // ==================== 2. 老王完整戰法技術指標運算引擎 ====================
+    function calcSMA(data, period) {
+      return data.map((_, idx) => {
+        if (idx < period - 1) return null;
+        let sum = 0;
+        for (let j = 0; j < period; j++) sum += data[idx - j].close;
+        return +(sum / period).toFixed(2);
+      });
+    }
+
+    function calcKD(data, n = 9) {
+      let k = 50, d = 50;
+      return data.map((bar, idx) => {
+        if (idx < n - 1) return { k: 50, d: 50 };
+        let lowN = Infinity, highN = -Infinity;
+        for (let j = 0; j < n; j++) {
+          lowN = Math.min(lowN, data[idx - j].low);
+          highN = Math.max(highN, data[idx - j].high);
+        }
+        const rsv = highN === lowN ? 50 : ((bar.close - lowN) / (highN - lowN)) * 100;
+        k = (2 / 3) * k + (1 / 3) * rsv;
+        d = (2 / 3) * d + (1 / 3) * k;
+        return { k: +k.toFixed(1), d: +d.toFixed(1) };
+      });
+    }
+
+    function calcRSI(data, period = 14) {
+      const out = Array(data.length).fill(null);
+      if (data.length <= period) return out;
+      let gain = 0, loss = 0;
+      for (let i = 1; i <= period; i++) {
+        const change = data[i].close - data[i - 1].close;
+        gain += Math.max(change, 0);
+        loss += Math.max(-change, 0);
+      }
+      let avgGain = gain / period, avgLoss = loss / period;
+      const value = () => avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+      out[period] = +value().toFixed(2);
+      for (let i = period + 1; i < data.length; i++) {
+        const change = data[i].close - data[i - 1].close;
+        avgGain = (avgGain * (period - 1) + Math.max(change, 0)) / period;
+        avgLoss = (avgLoss * (period - 1) + Math.max(-change, 0)) / period;
+        out[i] = +value().toFixed(2);
+      }
+      return out;
+    }
+
+    function calcMACD(data, fast = 12, slow = 26, signalPeriod = 9) {
+      const ema = (values, period) => {
+        const result = Array(values.length).fill(null);
+        if (values.length < period) return result;
+        const alpha = 2 / (period + 1);
+        let current = values.slice(0, period).reduce((sum, n) => sum + n, 0) / period;
+        result[period - 1] = current;
+        for (let i = period; i < values.length; i++) {
+          current = values[i] * alpha + current * (1 - alpha);
+          result[i] = current;
+        }
+        return result;
+      };
+      const closes = data.map(bar => bar.close);
+      const fastEma = ema(closes, fast), slowEma = ema(closes, slow);
+      const macd = closes.map((_, i) => fastEma[i] == null || slowEma[i] == null ? null : fastEma[i] - slowEma[i]);
+      const first = macd.findIndex(v => v != null);
+      const signalInput = macd.slice(first).map(v => v ?? 0);
+      const signalTail = ema(signalInput, signalPeriod);
+      const signal = Array(data.length).fill(null);
+      signalTail.forEach((v, i) => { if (v != null) signal[first + i] = v; });
+      return { macd, signal, histogram: macd.map((v, i) => v == null || signal[i] == null ? null : v - signal[i]) };
+    }
+
+    function processCandlesData(fullCandles, symbol, name) {
+      // 計算完整 5 年均線後，依選擇年份裁切顯示區間
+      const ma5 = calcSMA(fullCandles, 5);
+      const ma10 = calcSMA(fullCandles, 10);
+      const ma20 = calcSMA(fullCandles, 20);
+      const ma60 = calcSMA(fullCandles, 60);
+      const ma120 = calcSMA(fullCandles, 120);
+      const ma240 = calcSMA(fullCandles, 240);
+      const kdArr = calcKD(fullCandles, 9);
+      const rsiArr = calcRSI(fullCandles, 14);
+      const macdArr = calcMACD(fullCandles);
+
+      const enriched = fullCandles.map((c, i) => ({
+        ...c,
+        ma5: ma5[i],
+        ma10: ma10[i],
+        ma20: ma20[i],
+        ma60: ma60[i],
+        ma120: ma120[i],
+        ma240: ma240[i],
+        k: kdArr[i].k,
+        d: kdArr[i].d,
+        rsi: rsiArr[i],
+        macd: macdArr.macd[i],
+        macdSignal: macdArr.signal[i],
+        macdHist: macdArr.histogram[i],
+        bias5: ma5[i] ? +(((c.close - ma5[i]) / ma5[i]) * 100).toFixed(2) : null,
+        bias10: ma10[i] ? +(((c.close - ma10[i]) / ma10[i]) * 100).toFixed(2) : null
+      }));
+
+      const daysLimit = { '1m': 21, '3m': 63, '6m': 126, '1y': 252, '2y': 504, '3y': 756, '5y': 1260 }[currentRange] || 252;
+      currentCandles = enriched.slice(-daysLimit);
+      runLaoWangDiagnostic(currentCandles, symbol, name);
+    }
+
+    function reRunCurrentAnalysis() {
+      if (currentCandles.length) {
+        const item = watchlist.find(w => w.symbol === currentSymbol);
+        runLaoWangDiagnostic(currentCandles, currentSymbol, item ? item.name : currentSymbol);
+      }
+    }
+
+    function runLaoWangDiagnostic(candles, symbol, name) {
+      const len = candles.length;
+      const last = candles[len - 1];
+      const prev = candles[len - 2] || last;
+      const prev2 = candles[len - 3] || prev;
+
+      const change = +(last.close - prev.close).toFixed(2);
+      const changePct = +((change / prev.close) * 100).toFixed(2);
+
+      // 1. 六線站上狀態
+      const abv5 = last.ma5 != null && last.close >= last.ma5;
+      const abv10 = last.ma10 != null && last.close >= last.ma10;
+      const abv20 = last.ma20 != null && last.close >= last.ma20;
+      const abv60 = last.ma60 != null && last.close >= last.ma60;
+      const abv120 = last.ma120 != null && last.close >= last.ma120;
+      const abv240 = last.ma240 != null && last.close >= last.ma240;
+
+      // 均線斜率 (今日 vs 3日前)
+      const slope = (key) => {
+        if (!last[key] || !candles[len - 4]?.[key]) return '平';
+        const diff = last[key] - candles[len - 4][key];
+        return diff > 0 ? '↗上彎助漲' : (diff < 0 ? '↘下彎反壓' : '→走平');
+      };
+      const s5 = slope('ma5'), s10 = slope('ma10'), s20 = slope('ma20'), s60 = slope('ma60');
+
+      // 連續站穩/跌破天數 (三日確認濾網)
+      let streak20 = 0;
+      for (let i = len - 1; i >= 0; i--) {
+        if (!candles[i].ma20) break;
+        const isAbv = candles[i].close >= candles[i].ma20;
+        if (isAbv === abv20) streak20++;
+        else break;
+      }
+
+      // 乖離率計算
+      const bias5 = last.ma5 ? +(((last.close - last.ma5) / last.ma5) * 100).toFixed(2) : 0;
+      const bias10 = last.ma10 ? +(((last.close - last.ma10) / last.ma10) * 100).toFixed(2) : 0;
+
+      // 均線糾結檢查 (5, 10, 20MA 振幅小於 2.2%)
+      let isTangled = false;
+      if (last.ma5 && last.ma10 && last.ma20) {
+        const maxM = Math.max(last.ma5, last.ma10, last.ma20);
+        const minM = Math.min(last.ma5, last.ma10, last.ma20);
+        isTangled = ((maxM - minM) / minM) < 0.022;
+      }
+
+      // 2. 缺口與孤島反轉偵測 (完整載入期間；缺口封閉前持續有效)
+      const lookback = candles;
+      let openBullGaps = [];
+      let openBearGaps = [];
+
+      for (let i = 1; i < lookback.length; i++) {
+        const cur = lookback[i];
+        const pre = lookback[i - 1];
+        // 多方缺口：今日低點 > 昨日高點
+        if (cur.low > pre.high * 1.001) {
+          let closed = false;
+          for (let j = i + 1; j < lookback.length; j++) {
+            if (lookback[j].low <= pre.high) { closed = true; break; }
+          }
+          if (!closed) {
+            openBullGaps.push({ date: cur.date, top: cur.low, bottom: pre.high, idx: len - lookback.length + i });
+          }
+        }
+        // 空方缺口：今日高點 < 昨日低點
+        if (cur.high < pre.low * 0.999) {
+          let closed = false;
+          for (let j = i + 1; j < lookback.length; j++) {
+            if (lookback[j].high >= pre.low) { closed = true; break; }
+          }
+          if (!closed) {
+            openBearGaps.push({ date: cur.date, top: pre.low, bottom: cur.high, idx: len - lookback.length + i });
+          }
+        }
+      }
+
+      // 檢查今日或昨日是否剛剛封閉空方缺口 (聽中!)
+      let justClosedBearGap = false;
+      for (let i = 1; i < lookback.length - 2; i++) {
+        const cur = lookback[i], pre = lookback[i - 1];
+        if (cur.high < pre.low * 0.999) {
+          // 檢查是否在最近2日才被封閉
+          let closedBefore = false;
+          for (let j = i + 1; j < lookback.length - 2; j++) {
+            if (lookback[j].high >= pre.low) { closedBefore = true; break; }
+          }
+          if (!closedBefore && (last.high >= pre.low || prev.high >= pre.low)) {
+            justClosedBearGap = true;
+          }
+        }
+      }
+
+      // 孤島反轉持續到相關空方缺口封閉：前有未封閉多方缺口，後有未封閉空方缺口。
+      const activeIslandTop = openBearGaps.find(bear =>
+        openBullGaps.some(bull => bull.idx < bear.idx)
+      );
+      const islandTop = Boolean(activeIslandTop);
+
+      // 3. 成交量、近20日爆天量低點 (兇多吉少) 與 關鍵爆量長紅中關/低點
+      const recent20 = candles.slice(-20);
+      let maxVolBar = recent20[0];
+      recent20.forEach(b => { if (b.volume > maxVolBar.volume) maxVolBar = b; });
+
+      const xiongDuoJiShao = last.close < maxVolBar.low && maxVolBar.date !== last.date;
+      const volumeSwapSuccess = last.close > maxVolBar.high && maxVolBar.date !== last.date;
+      // Keep the latest successful high-volume breakout visible until price
+      // closes below the triggering high-volume candle's low.
+      let activeVolumeSwap = null;
+      const volumeScanStart = Math.max(20, len - 60);
+      for (let i = volumeScanStart; i < len; i++) {
+        if (activeVolumeSwap && candles[i].close < activeVolumeSwap.low) {
+          activeVolumeSwap = null;
+        }
+        const priorBars = candles.slice(Math.max(0, i - 20), i);
+        if (priorBars.length < 20) continue;
+        const triggerBar = priorBars.reduce((max, bar) => bar.volume > max.volume ? bar : max);
+        if (candles[i].close > triggerBar.high) {
+          activeVolumeSwap = { date: candles[i].date, low: triggerBar.low };
+        }
+      }
+      const volRatio = prev.volume > 0 ? +(last.volume / prev.volume).toFixed(2) : 1;
+      const highPosVolShrink = abv20 && last.close >= Math.max(...recent20.map(b => b.close)) * 0.98 && volRatio < 0.55;
+
+      // 尋找近25日最具代表性的「關鍵爆量長紅 K 棒」
+      const recent25 = candles.slice(-25);
+      const avgVol25 = recent25.reduce((s, b) => s + b.volume, 0) / recent25.length;
+      let keyLongRed = null;
+      for (let i = recent25.length - 1; i >= 0; i--) {
+        const b = recent25[i];
+        const bodyPct = (b.close - b.open) / b.open;
+        if (bodyPct >= 0.025 && b.volume >= avgVol25 * 1.2) {
+          keyLongRed = {
+            date: b.date,
+            low: b.low,
+            high: b.high,
+            mid: +((b.open + b.close) / 2).toFixed(2),
+            idx: len - recent25.length + i
+          };
+          break;
+        }
+      }
+      let activeKeyLongRed = null;
+      for (let i = 24; i < len; i++) {
+        const bar = candles[i];
+        if (activeKeyLongRed && bar.close < activeKeyLongRed.low) activeKeyLongRed = null;
+        const volumeWindow = candles.slice(i - 24, i + 1);
+        const avgVolume = volumeWindow.reduce((sum, item) => sum + item.volume, 0) / volumeWindow.length;
+        if ((bar.close - bar.open) / bar.open >= 0.025 && bar.volume >= avgVolume * 1.2) {
+          activeKeyLongRed = { date: bar.date, low: bar.low };
+        }
+      }
+
+      // 4. 結構型態：前高突破 (海闊天空)、W底 / M頭 / 頭肩頂
+      const prev60 = candles.slice(-65, -5);
+      const high60 = prev60.length ? Math.max(...prev60.map(b => b.high)) : last.high;
+      const low60 = prev60.length ? Math.min(...prev60.map(b => b.low)) : last.low;
+      const haiKuoTianKong = last.close > high60 && abv5 && abv10 && abv20;
+      const falseBreakout = prev.high > high60 && last.close < high60 && !abv5;
+
+      // 組合所有觸發的標籤與戰法判讀
+      const badges = [];
+      const threeYang = abv5 && abv10 && abv20;
+      const threeWuNai = !abv5 && !abv10 && !abv20;
+      const fourHai = threeYang && abv60;
+      const fourChuGe = threeWuNai && !abv60;
+      const daPeng = fourHai && abv120 && abv240;
+      const sixBreak = fourChuGe && !abv120 && !abv240;
+
+      if (daPeng) badges.push({ text: '🦅 大鵬展翅 (六線全上)', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' });
+      else if (fourHai) badges.push({ text: '🐉 四海遊龍 (站穩四季線)', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' });
+      else if (threeYang) badges.push({ text: '☀️ 三陽開泰 (站上5/10/20MA)', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' });
+
+      if (sixBreak) badges.push({ text: '🐻 六線全破 (長空熊市)', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/40' });
+      else if (fourChuGe) badges.push({ text: '⚔️ 四面楚歌 (跌破季線)', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/40' });
+      else if (threeWuNai) badges.push({ text: '🌧️ 三聲無奈 (破5/10/20MA)', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/40' });
+
+      if (threeYang && (justClosedBearGap || openBearGaps.length === 0)) {
+        badges.push({ text: '🀄 聽三條聽中 (完全胡牌)', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/40' });
+      } else if (threeYang && openBearGaps.length > 0) {
+        badges.push({ text: '🀄 聽三條未聽中 (待補空方缺口)', cls: 'bg-sky-500/20 text-sky-300 border-sky-500/40' });
+      }
+
+      if (openBullGaps.length) badges.push({ text: `🟢 多方缺口 ${openBullGaps.length} 個未封閉 (最近 ${openBullGaps[openBullGaps.length - 1].date})`, cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' });
+      if (openBearGaps.length) badges.push({ text: `🔴 空方缺口 ${openBearGaps.length} 個未封閉 (最近 ${openBearGaps[openBearGaps.length - 1].date})`, cls: 'bg-rose-500/20 text-rose-300 border-rose-500/40' });
+
+      if (haiKuoTianKong) badges.push({ text: '🌌 海闊天空 萬里無雲', cls: 'bg-purple-500/20 text-purple-300 border-purple-500/40' });
+      if (isTangled) badges.push({ text: '🪢 命懸三線 (均線極度糾結)', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/40' });
+      if (xiongDuoJiShao) badges.push({ text: '💀 兇多吉少 (跌破20日天量低點)', cls: 'bg-rose-600/30 text-rose-200 border-rose-500' });
+      if (activeVolumeSwap) badges.push({ text: `🔥 天量成功換手 (訊號 ${activeVolumeSwap.date}，收盤跌破天量低點解除)`, cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' });
+      if (falseBreakout) badges.push({ text: '🪤 假突破真破底警報', cls: 'bg-rose-600/30 text-rose-200 border-rose-500' });
+      if (activeIslandTop) badges.push({ text: `🏝️ 孤島反轉見頂警報 (空方缺口 ${activeIslandTop.date})`, cls: 'bg-rose-600/30 text-rose-200 border-rose-500' });
+      if (activeKeyLongRed) badges.push({ text: `🔵 關鍵長紅支撐有效 (訊號 ${activeKeyLongRed.date}，跌破低點解除)`, cls: 'bg-sky-500/20 text-sky-300 border-sky-500/40' });
+      if (bias5 >= 6) badges.push({ text: `⚠️ 正乖離過大 (+${bias5}%) 勿追高`, cls: 'bg-amber-500/20 text-amber-300 border-amber-500/40' });
+      if (bias5 <= -6) badges.push({ text: `🧊 負乖離過深 (${bias5}%) 勿殺低`, cls: 'bg-sky-500/20 text-sky-300 border-sky-500/40' });
+      if (last.k > 80 && last.k < last.d) badges.push({ text: `📉 KD高檔(${last.k})死叉減碼`, cls: 'bg-rose-500/20 text-rose-300 border-rose-500/40' });
+      if (last.k < 20 && last.k > last.d) badges.push({ text: `📈 KD低檔(${last.k})金叉止跌`, cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' });
+
+      // 計算建議持股水位與一句話決策指令
+      const retailChip = document.getElementById('retailChipSelect').value;
+      const isDisposition = document.getElementById('dispositionCheck').checked;
+
+      let posPct = 50;
+      let cmdTitle = '';
+      let cmdDetail = '';
+      let mindset = '多頭/反彈看撐不看壓';
+
+      if (xiongDuoJiShao || falseBreakout || islandTop || fourChuGe || sixBreak) {
+        posPct = 15;
+        mindset = '下跌看壓不看撐 (嚴禁凹單)';
+        cmdTitle = '🛑 觸發避險/停損紅燈：立即出清個股、雙手綁起來！';
+        cmdDetail = `偵測到「${xiongDuoJiShao ? '跌破天量低點(兇多吉少)' : (falseBreakout ? '假突破跌回頸線' : (islandTop ? '高檔孤島反轉' : '四面楚歌破季線'))}」，空方賣壓正式啟動。大盤或整體水位壓低至 30% 以下甚至空手，切勿向下尋找季線或半年線攤平，等待重新站回 10MA 之上再談買回。`;
+      } else if (threeWuNai) {
+        posPct = 25;
+        mindset = '下跌看壓不看撐';
+        cmdTitle = '⚠️ 三聲無奈翻空：果斷執行「先賣再買」戰術避險';
+        cmdDetail = `股價同時跌破 5MA (${last.ma5})、10MA (${last.ma10}) 與月線 (${last.ma20})，短中期全面翻空。依據老王「停損不是錯，錯是沒有買回來」，先全數賣出避開主跌段，若日後快速站回月線再買回即可。`;
+      } else if (!abv10 && abv20) {
+        posPct = 30;
+        mindset = '下跌看壓不看撐 (回測月線)';
+        cmdTitle = '📤 跌破 10MA 波段生命線：個股波段獲利了結，守月線觀察';
+        cmdDetail = `已跌破 10MA (${last.ma10})，一條線波段戰法宣告結束。目前回測月線 (${last.ma20})，若月線失守將轉為「三聲無奈」；請先收割波段獲利，總資金水位降至 3 成。`;
+      } else if (!abv5 && abv10) {
+        posPct = 50;
+        mindset = '多頭拉回看撐不看壓';
+        cmdTitle = '✂️ 跌破 5MA 極短線轉弱：獲利減碼一半，剩餘一半守 10MA';
+        cmdDetail = `股價跌破 5MA (${last.ma5})，短線動能放緩，依 SOP 減碼一半鎖住利潤；只要 10MA (${last.ma10}) 生命線與${openBullGaps.length ? `多方缺口下緣 (${openBullGaps[openBullGaps.length-1].bottom})` : '關鍵長紅低點'}未破，波段多頭仍未結束。`;
+      } else if (haiKuoTianKong || (daPeng && s5.includes('上彎') && s10.includes('上彎'))) {
+        posPct = 85;
+        mindset = '多頭強勢看撐不看壓';
+        cmdTitle = '🚀 海闊天空主升段：持股水位放大至 70%～85%，沿 10MA 抱牢！';
+        cmdDetail = `六線全多且突破前高天花板，上方無套牢賣壓。${bias5 >= 6 ? `但目前 5MA 正乖離達 +${bias5}%，切勿單日追高，等拉回 5MA (${last.ma5}) 附近再加碼！` : '只要 5MA 不破就續抱，跌破 5MA 減半、跌破 10MA 全出。'}`;
+      } else if (threeYang) {
+        posPct = (justClosedBearGap || openBearGaps.length === 0) ? 75 : 55;
+        mindset = '多頭轉強看撐不看壓';
+        cmdTitle = openBearGaps.length === 0
+          ? '🟢 三陽開泰＋聽三條聽中：多頭正式胡牌，順勢分批布局！'
+          : `🟡 三陽開泰已站上三線，但上方仍有空方缺口 (${openBearGaps[0].top}) 壓制`;
+        cmdDetail = `股價站穩 5MA/10MA/月線 (已連續站穩月線 ${streak20} 日${streak20 >= 3 ? '，通過三日確認濾網' : '，待滿3日更穩'})。${openBearGaps.length > 0 ? `目前屬於「聽三條未聽中」，建議先建倉 5 成試單，待帶量封閉 ${openBearGaps[0].top} 空方缺口後再加碼至 7~8 成。` : '防守點設於月線或最近多方缺口下緣。'}`;
+      } else {
+        posPct = 40;
+        mindset = '區間震盪觀察期';
+        cmdTitle = '⚖️ 均線糾結多空拉鋸：改用「區間低點 / 缺口替代法」防雙巴';
+        cmdDetail = `目前處於均線整理區間，短均線容易上下騙線。請暫時忽略 5MA/10MA 雜訊，改以「近期區間低點」或「關鍵長紅低點」作為唯一停損線，突破三陽開泰再加碼。`;
+      }
+
+      // Optional user-provided filters that remain visible in the interface.
+      if (isDisposition) {
+        cmdDetail += ' 【處置股警示】分盤交易會造成成交量萎縮，突破易失敗，嚴禁重壓追高！';
+      }
+      if (retailChip === 'decreasing') {
+        cmdDetail += ' 【籌碼加分】100張以下散戶持續大砍退場，籌碼流向大戶，有利波段走勢。';
+      } else if (retailChip === 'increasing') {
+        cmdDetail += ' 【籌碼減分】100張以下散戶持續增加，籌碼凌亂易漲不動。';
+      }
+
+      // 更新 Hero UI
+      document.getElementById('heroSymbol').textContent = symbol;
+      document.getElementById('heroName').textContent = name;
+      document.getElementById('heroPrice').textContent = last.close.toFixed(2);
+      const chgEl = document.getElementById('heroChange');
+      chgEl.textContent = `${change >= 0 ? '▲' : '▼'} ${Math.abs(change).toFixed(2)} (${changePct >= 0 ? '+' : ''}${changePct}%)`;
+      chgEl.className = `px-2 py-0.5 rounded text-xs font-bold font-mono-num ${change >= 0 ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'}`;
+
+      document.getElementById('heroBadges').innerHTML = badges.map(b => `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold border ${b.cls}">${b.text}</span>`).join('');
+
+      document.getElementById('positionPctText').textContent = `${posPct}%`;
+      document.getElementById('cashPctText').textContent = `保留現金：${100 - posPct}%`;
+      document.getElementById('mindsetTag').textContent = mindset;
+      const bar = document.getElementById('positionBar');
+      bar.style.width = `${posPct}%`;
+      bar.className = `h-full transition-all duration-500 ${posPct >= 65 ? 'bg-emerald-500' : (posPct >= 40 ? 'bg-amber-500' : 'bg-rose-500')}`;
+
+      document.getElementById('actionCommandTitle').textContent = cmdTitle;
+      document.getElementById('actionCommandDetail').textContent = cmdDetail;
+
+      // 更新四大防守價位
+      document.getElementById('level5MA').textContent = last.ma5 ? last.ma5.toFixed(2) : '--';
+      document.getElementById('slope5MA').textContent = `斜率：${s5}`;
+      document.getElementById('level10MA').textContent = last.ma10 ? last.ma10.toFixed(2) : '--';
+      document.getElementById('slope10MA').textContent = `斜率：${s10}`;
+      document.getElementById('levelKeyLow').textContent = `${keyLongRed ? keyLongRed.low : maxVolBar.low} / 天量低 ${maxVolBar.low}`;
+      document.getElementById('levelKeyMid').textContent = keyLongRed ? `關鍵長紅中關：${keyLongRed.mid} (${keyLongRed.date})` : `天量日：${maxVolBar.date}`;
+      document.getElementById('level20_60MA').textContent = `月 ${last.ma20 || '--'} / 季 ${last.ma60 || '--'}`;
+      document.getElementById('level120_240MA').textContent = `半年 ${last.ma120 || '--'} / 年 ${last.ma240 || '--'}`;
+
+      // 更新六大維度詳細診斷卡片
+      document.getElementById('diagMA').innerHTML = `
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>短中期三線 (5/10/20MA)：</span><span class="font-bold ${threeYang ? 'text-emerald-400' : (threeWuNai ? 'text-rose-400' : 'text-amber-300')}">${threeYang ? '三陽開泰全站上' : (threeWuNai ? '三聲無奈全跌破' : '多空交錯整理')}</span></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>中長期三線 (60/120/240MA)：</span><span class="font-bold">${abv60 ? '站季線' : '破季線'} / ${abv120 ? '站半年線' : '破半年線'} / ${abv240 ? '站年線' : '破年線'}</span></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>均線扣抵斜率方向：</span><span>月線 ${s20} ｜ 季線 ${s60}</span></div>
+        <div class="flex justify-between py-1"><span>三日確認濾網：</span><span class="font-bold text-sky-300">已連續 ${streak20} 日${abv20 ? '站穩' : '跌破'}月線 ${streak20 >= 3 ? '(✅ 確認有效)' : '(⏳ 觀察是否滿3日)'}</span></div>
+      `;
+
+      document.getElementById('diagGap').innerHTML = `
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>未封閉多方缺口 (支撐)：</span><span class="font-bold text-emerald-400">${openBullGaps.length ? `有 ${openBullGaps.length} 個，最近下緣 ${openBullGaps[openBullGaps.length-1].bottom}` : '目前無未封閉多方缺口'}</span></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>未封閉空方缺口 (壓力)：</span><span class="font-bold text-rose-400">${openBearGaps.length ? `有 ${openBearGaps.length} 個，最近上緣 ${openBearGaps[openBearGaps.length-1].top}` : '無上方空方缺口阻礙'}</span></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>聽三條聽中胡牌狀態：</span><span class="font-bold text-amber-300">${threeYang && openBearGaps.length === 0 ? '雙條件滿足，完全胡牌！' : (threeYang ? '已聽三條，待補空方缺口聽中' : '尚未聽三條')}</span></div>
+        <div class="flex justify-between py-1"><span>孤島反轉偵測：</span><span class="${islandTop ? 'text-rose-400 font-bold' : 'text-slate-400'}">${islandTop ? '⚠️ 偵測到高檔孤島向下跳空反轉！' : '未出現孤島反轉結構'}</span></div>
+      `;
+
+      document.getElementById('diagVol').innerHTML = `
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>近20日爆天量基準日：</span><span class="font-mono-num">${maxVolBar.date} (高 ${maxVolBar.high} / 低 ${maxVolBar.low})</span></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>兇多吉少 / 成功換手：</span><span class="font-bold ${xiongDuoJiShao ? 'text-rose-400' : (volumeSwapSuccess ? 'text-emerald-400' : 'text-slate-300')}">${xiongDuoJiShao ? '💀 跌破天量低點 (兇多吉少)' : (volumeSwapSuccess ? '🔥 突破天量高點 (成功換手)' : '尚在天量高低區間內震盪')}</span></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>關鍵爆量長紅防守：</span><span>${keyLongRed ? `${keyLongRed.date} 中關 ${keyLongRed.mid} / 低點 ${keyLongRed.low}` : '近25日無顯著爆量長紅'}</span></div>
+        <div class="flex justify-between py-1"><span>高檔腰斬量縮檢查：</span><span class="${highPosVolShrink ? 'text-amber-300 font-bold' : 'text-slate-400'}">${highPosVolShrink ? '⚠️ 高檔量縮至昨日一半以下，謹防拉回' : '量價結構正常'}</span></div>
+      `;
+
+      document.getElementById('diagPattern').innerHTML = `
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>60日區間高低點測距：</span><span class="font-mono-num">前高 ${high60} / 前低 ${low60} (波幅 ${(((high60-low60)/low60)*100).toFixed(1)}%)</span></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>5MA / 10MA 乖離率：</span><span class="font-mono-num">5MA: ${bias5 >= 0 ? '+' : ''}${bias5}% ｜ 10MA: ${bias10 >= 0 ? '+' : ''}${bias10}%</span></div>
+        <div class="flex justify-between py-1 border-b border-slate-800"><span>KD(9,3,3) 極端指標：</span><span>K=${last.k}, D=${last.d} ${last.k > 80 ? '(高檔鈍化/超買區)' : (last.k < 20 ? '(低檔超賣區)' : '(中間雜訊區忽略)')}</span></div>
+        <div class="flex justify-between py-1"><span>防雙巴洗盤建議：</span><span class="text-sky-300 font-bold">${isTangled ? '均線糾結中！改守多方缺口下緣或區間低點' : '趨勢明確，依均線紀律操作'}</span></div>
+      `;
+
+      currentAnalysis = {
+        symbol, name, last, openBullGaps, openBearGaps, maxVolBar, keyLongRed, high60, low60
+      };
+      document.getElementById('chartRangeLabel').textContent = `(${candles[0].date} ~ ${last.date}，顯示近 ${Math.min(candles.length, 160)} 交易日)`;
+      drawKlineChart(candles, currentAnalysis);
+    }
+
+    // ==================== 3. 原生高解析度互動 K 線圖表 ====================
+    function toggleMALayer(key) {
+      maLayers[key] = !maLayers[key];
+      if (currentCandles.length && currentAnalysis) {
+        drawKlineChart(currentCandles, currentAnalysis);
+      }
+    }
+
+    function drawKlineChart(allCandles, info) {
+      const canvas = document.getElementById('klineCanvas');
+      const parent = canvas.parentElement;
+      const dpr = window.devicePixelRatio || 1;
+      const width = parent.clientWidth;
+      const height = parent.clientHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, width, height);
+
+      // 依年份選擇顯示根數 (1Y最多顯示150根，2Y~5Y依比例取樣或顯示最近220根確保K線清晰)
+      const viewCount = { '1m': 21, '3m': 63, '6m': 126, '1y': 252, '2y': 504, '3y': 756, '5y': 1260 }[currentRange] || 252;
+      const data = allCandles.slice(-viewCount);
+      const startIdxOffset = allCandles.length - data.length;
+
+      const pad = { top: 20, right: 65, bottom: 26, left: 15 };
+      const chartW = width - pad.left - pad.right;
+      const priceH = (height - pad.top - pad.bottom) * 0.74;
+      const volH = (height - pad.top - pad.bottom) * 0.20;
+      const volTop = pad.top + priceH + 14;
+
+      let minP = Infinity, maxP = -Infinity, maxV = 0;
+      data.forEach(d => {
+        minP = Math.min(minP, d.low);
+        maxP = Math.max(maxP, d.high);
+        if (maLayers.ma60 && d.ma60) { minP = Math.min(minP, d.ma60); maxP = Math.max(maxP, d.ma60); }
+        if (maLayers.ma240 && d.ma240) { minP = Math.min(minP, d.ma240); maxP = Math.max(maxP, d.ma240); }
+        maxV = Math.max(maxV, d.volume);
+      });
+      const pPad = (maxP - minP) * 0.06;
+      minP -= pPad; maxP += pPad;
+
+      const yPrice = p => pad.top + ((maxP - p) / (maxP - minP)) * priceH;
+      const xStep = chartW / data.length;
+      const xCenter = i => pad.left + (i + 0.5) * xStep;
+
+      // 背景格線與右側價格軸
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px JetBrains Mono';
+      for (let g = 0; g <= 4; g++) {
+        const val = minP + ((maxP - minP) * g) / 4;
+        const y = yPrice(val);
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
+        ctx.fillText(val.toFixed(1), width - pad.right + 6, y + 4);
+      }
+
+      // 繪製未封閉多方缺口 (綠色半透明帶)
+      info.openBullGaps.forEach(gap => {
+        const localIdx = Math.max(0, gap.idx - startIdxOffset);
+        if (localIdx < data.length) {
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.16)';
+          const y1 = yPrice(gap.top), y2 = yPrice(gap.bottom);
+          ctx.fillRect(xCenter(localIdx), y1, width - pad.right - xCenter(localIdx), Math.max(2, y2 - y1));
+        }
+      });
+
+      // 繪製未封閉空方缺口 (紅色半透明帶)
+      info.openBearGaps.forEach(gap => {
+        const localIdx = Math.max(0, gap.idx - startIdxOffset);
+        if (localIdx < data.length) {
+          ctx.fillStyle = 'rgba(244, 63, 94, 0.18)';
+          const y1 = yPrice(gap.top), y2 = yPrice(gap.bottom);
+          ctx.fillRect(xCenter(localIdx), y1, width - pad.right - xCenter(localIdx), Math.max(2, y2 - y1));
+        }
+      });
+
+      // 繪製近20日天量低點水平虛線 (黃色)
+      if (info.maxVolBar) {
+        const yMaxV = yPrice(info.maxVolBar.low);
+        ctx.save();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(pad.left, yMaxV); ctx.lineTo(width - pad.right, yMaxV); ctx.stroke();
+        ctx.restore();
+      }
+
+      // 繪製關鍵爆量長紅低點水平虛線 (藍色)
+      if (info.keyLongRed) {
+        const yKeyL = yPrice(info.keyLongRed.low);
+        ctx.save();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(pad.left, yKeyL); ctx.lineTo(width - pad.right, yKeyL); ctx.stroke();
+        ctx.restore();
+      }
+
+      // 繪製 K 棒與成交量 (台股習慣：紅漲綠跌)
+      const candleW = Math.max(2, xStep * 0.65);
+      data.forEach((d, i) => {
+        const x = xCenter(i);
+        const isUp = d.close >= d.open;
+        const color = isUp ? '#f43f5e' : '#10b981';
+
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 1.2;
+
+        // 上下影線
+        ctx.beginPath();
+        ctx.moveTo(x, yPrice(d.high));
+        ctx.lineTo(x, yPrice(d.low));
+        ctx.stroke();
+
+        // 實體
+        const yO = yPrice(d.open), yC = yPrice(d.close);
+        ctx.fillRect(x - candleW / 2, Math.min(yO, yC), candleW, Math.max(1.5, Math.abs(yC - yO)));
+
+        // 成交量柱
+        if (maxV > 0) {
+          const vh = (d.volume / maxV) * volH;
+          ctx.globalAlpha = d.date === info.maxVolBar?.date ? 0.95 : 0.45;
+          ctx.fillRect(x - candleW / 2, volTop + volH - vh, candleW, vh);
+          ctx.globalAlpha = 1;
+        }
+      });
+
+      // 繪製六條均線
+      const maConfigs = [
+        { key: 'ma5', color: '#38bdf8' },
+        { key: 'ma10', color: '#fbbf24' },
+        { key: 'ma20', color: '#c084fc' },
+        { key: 'ma60', color: '#34d399' },
+        { key: 'ma120', color: '#f472b6' },
+        { key: 'ma240', color: '#fb923c' }
+      ];
+
+      maConfigs.forEach(cfg => {
+        if (!maLayers[cfg.key]) return;
+        ctx.strokeStyle = cfg.color;
+        ctx.lineWidth = cfg.key === 'ma10' || cfg.key === 'ma20' ? 1.8 : 1.3;
+        ctx.beginPath();
+        let started = false;
+        data.forEach((d, i) => {
+          if (d[cfg.key] == null) return;
+          const x = xCenter(i), y = yPrice(d[cfg.key]);
+          if (!started) { ctx.moveTo(x, y); started = true; }
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      });
+
+      drawIndicatorCharts(data);
+
+      // 滑鼠懸停互動提示
+      canvas.onmousemove = e => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const idx = Math.floor((mx - pad.left) / xStep);
+        const tip = document.getElementById('chartTooltip');
+        if (idx >= 0 && idx < data.length) {
+          const d = data[idx];
+          tip.classList.remove('hidden');
+          tip.style.left = `${Math.min(width - 210, Math.max(10, mx + 12))}px`;
+          tip.style.top = '12px';
+          tip.innerHTML = `
+            <div class="font-bold text-white mb-1">${d.date}</div>
+            <div class="text-slate-300">開 ${d.open} 高 ${d.high} 低 ${d.low} 收 <span class="text-amber-400 font-bold">${d.close}</span></div>
+            <div class="text-sky-400">5MA: ${d.ma5 || '--'} | 10MA: ${d.ma10 || '--'}</div>
+            <div class="text-cyan-300">乖離率 5MA: ${d.bias5 == null ? '--' : `${d.bias5}%`} | 10MA: ${d.bias10 == null ? '--' : `${d.bias10}%`}</div>
+            <div class="text-purple-400">月線: ${d.ma20 || '--'} | 季線: ${d.ma60 || '--'}</div>
+            <div class="text-pink-400">半年: ${d.ma120 || '--'} | 年線: ${d.ma240 || '--'}</div>
+            <div class="text-amber-300">RSI(14): ${d.rsi ?? '--'} | KD: K ${d.k ?? '--'} / D ${d.d ?? '--'}</div>
+            <div class="text-violet-300">MACD: ${d.macd == null ? '--' : d.macd.toFixed(2)} | 訊號: ${d.macdSignal == null ? '--' : d.macdSignal.toFixed(2)}</div>
+          `;
+        } else {
+          tip.classList.add('hidden');
+        }
+      };
+      canvas.onmouseleave = () => document.getElementById('chartTooltip').classList.add('hidden');
+    }
+
+    function drawIndicatorCharts(data) {
+      const canvas = document.getElementById('indicatorCanvas');
+      if (!canvas || !data.length) return;
+      const latest = data[data.length - 1];
+      const readingBox = document.getElementById('indicatorReadings');
+      const formatValue = value => Number.isFinite(value) ? value.toFixed(2) : '--';
+      if (readingBox) readingBox.innerHTML = `
+        <div class="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2">
+          <div class="text-[11px] text-slate-400">RSI (14) <span class="text-slate-500">· ${latest.date}</span></div>
+          <div class="mt-1 font-mono-num text-sm font-bold text-sky-400">${formatValue(latest.rsi)}</div>
+        </div>
+        <div class="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2">
+          <div class="text-[11px] text-slate-400">KD (9, 3, 3) <span class="text-slate-500">· ${latest.date}</span></div>
+          <div class="mt-1 font-mono-num text-sm font-bold"><span class="text-emerald-400">K ${formatValue(latest.k)}</span><span class="text-slate-500"> / </span><span class="text-pink-400">D ${formatValue(latest.d)}</span></div>
+        </div>
+        <div class="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2">
+          <div class="text-[11px] text-slate-400">MACD (12, 26, 9) <span class="text-slate-500">· ${latest.date}</span></div>
+          <div class="mt-1 font-mono-num text-xs font-bold"><span class="text-violet-400">DIF ${formatValue(latest.macd)}</span><span class="text-slate-500"> / </span><span class="text-amber-400">訊號 ${formatValue(latest.macdSignal)}</span></div>
+          <div class="mt-1 text-[10px] text-slate-400">柱體 ${formatValue(latest.macdHist)}</div>
+        </div>`;
+      const width = canvas.parentElement.clientWidth - 16;
+      const height = 360;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.height = `${height}px`;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const left = 48, right = 12, chartW = width - left - right;
+      const gap = 8, panelH = (height - gap * 2) / 3;
+      const x = i => left + (i + 0.5) * chartW / data.length;
+      const panels = [
+        { top: 0, title: 'RSI (14)', min: 0, max: 100 },
+        { top: panelH + gap, title: 'MACD (12, 26, 9)', min: null, max: null },
+        { top: (panelH + gap) * 2, title: 'KD (9, 3, 3)', min: 0, max: 100 }
+      ];
+      const colors = { text: '#94a3b8', grid: 'rgba(71,85,105,.35)', rsi: '#38bdf8', macd: '#a78bfa', signal: '#fbbf24', k: '#34d399', d: '#f472b6' };
+      const line = (key, color, top, min, max, values = data.map(d => d[key])) => {
+        ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+        let started = false;
+        values.forEach((v, i) => {
+          if (!Number.isFinite(v)) { started = false; return; }
+          const px = x(i), py = top + panelH - 20 - ((v - min) / (max - min)) * (panelH - 38);
+          if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+      };
+      panels.forEach(p => {
+        ctx.fillStyle = '#020617'; ctx.fillRect(0, p.top, width, panelH);
+        ctx.strokeStyle = colors.grid; ctx.strokeRect(0.5, p.top + 0.5, width - 1, panelH - 1);
+        ctx.fillStyle = colors.text; ctx.font = '11px sans-serif'; ctx.fillText(p.title, 8, p.top + 15);
+      });
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = colors.rsi; ctx.fillText('RSI', width - 34, panels[0].top + 15);
+      ctx.fillStyle = colors.macd; ctx.fillText('DIF', width - 77, panels[1].top + 15);
+      ctx.fillStyle = colors.signal; ctx.fillText('訊號', width - 48, panels[1].top + 15);
+
+      const rsiPanel = panels[0];
+      [30, 70].forEach(level => {
+        const y = rsiPanel.top + panelH - 20 - (level / 100) * (panelH - 38);
+        ctx.setLineDash([4, 4]); ctx.strokeStyle = colors.grid; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(width - right, y); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = colors.text; ctx.fillText(String(level), 12, y + 4);
+      });
+      line('rsi', colors.rsi, rsiPanel.top, 0, 100);
+
+      const macdPanel = panels[1];
+      const macdValues = data.flatMap(d => [d.macd, d.macdSignal, d.macdHist]).filter(Number.isFinite);
+      let macdMin = Math.min(0, ...macdValues), macdMax = Math.max(0, ...macdValues);
+      if (macdMax === macdMin) { macdMax += 1; macdMin -= 1; }
+      const my = v => macdPanel.top + panelH - 20 - ((v - macdMin) / (macdMax - macdMin)) * (panelH - 38);
+      const zeroY = my(0); ctx.strokeStyle = colors.grid; ctx.beginPath(); ctx.moveTo(left, zeroY); ctx.lineTo(width - right, zeroY); ctx.stroke();
+      const barW = Math.max(1, chartW / data.length * 0.7);
+      data.forEach((d, i) => {
+        if (!Number.isFinite(d.macdHist)) return;
+        ctx.fillStyle = d.macdHist >= 0 ? 'rgba(52,211,153,.65)' : 'rgba(251,113,133,.65)';
+        ctx.fillRect(x(i) - barW / 2, Math.min(zeroY, my(d.macdHist)), barW, Math.max(1, Math.abs(my(d.macdHist) - zeroY)));
+      });
+      line('macd', colors.macd, macdPanel.top, macdMin, macdMax);
+      line('macdSignal', colors.signal, macdPanel.top, macdMin, macdMax);
+
+      const kdPanel = panels[2];
+      [20, 80].forEach(level => {
+        const y = kdPanel.top + panelH - 20 - (level / 100) * (panelH - 38);
+        ctx.setLineDash([4, 4]); ctx.strokeStyle = colors.grid; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(width - right, y); ctx.stroke(); ctx.setLineDash([]);
+      });
+      line('k', colors.k, kdPanel.top, 0, 100);
+      line('d', colors.d, kdPanel.top, 0, 100);
+      data.forEach((d, i) => {
+        if (i === 0 || !Number.isFinite(d.k) || !Number.isFinite(d.d)) return;
+        const prev = data[i - 1];
+        const golden = prev.k <= prev.d && d.k > d.d;
+        const death = prev.k >= prev.d && d.k < d.d;
+        if (!golden && !death) return;
+        const py = kdPanel.top + panelH - 20 - ((d.k + d.d) / 2 / 100) * (panelH - 38);
+        ctx.beginPath(); ctx.arc(x(i), py, 4, 0, Math.PI * 2);
+        ctx.fillStyle = golden ? '#34d399' : '#fb7185'; ctx.fill();
+      });
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = colors.k; ctx.fillText('K', width - 67, kdPanel.top + 15);
+      ctx.fillStyle = colors.d; ctx.fillText('D', width - 51, kdPanel.top + 15);
+      ctx.fillStyle = '#34d399'; ctx.fillText('● 黃金交叉', width - 38, kdPanel.top + 15);
+      ctx.fillStyle = '#fb7185'; ctx.fillText('● 死亡交叉', width - 95, kdPanel.top + 29);
+    }
+
+    // ==================== 4. 觀察名單管理 ====================
+    function renderWatchlist() {
+      const box = document.getElementById('watchlistContainer');
+      if (STREAMLIT_PAYLOAD) {
+        box.innerHTML = `<div class="p-2.5 rounded-xl border border-rose-500 bg-rose-600/20 text-sm">${STREAMLIT_PAYLOAD.symbol} · ${STREAMLIT_PAYLOAD.name}<div class="text-xs text-slate-400 mt-1">切換標的請使用 Streamlit 左側選單</div></div>`;
+        return;
+      }
+      box.innerHTML = watchlist.map(item => {
+        const active = item.symbol === currentSymbol;
+        return `
+          <div onclick="analyzeSymbol('${item.symbol}')" 
+               class="flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition ${active ? 'bg-rose-600/20 border-rose-500 text-white' : 'bg-slate-950/70 border-slate-800 hover:border-slate-600 text-slate-300'}">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-mono-num font-bold text-sm">${item.symbol}</span>
+                <span class="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">${item.type}</span>
+              </div>
+              <div class="text-xs text-slate-400">${item.name}</div>
+            </div>
+            <button onclick="event.stopPropagation(); removeWatchlist('${item.symbol}')" class="text-slate-500 hover:text-rose-400 text-xs px-1.5" title="移除">✕</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function addToWatchlist() {
+      const raw = document.getElementById('symbolInput').value.trim().toUpperCase();
+      if (!raw) return;
+      if (!watchlist.some(w => w.symbol === raw)) {
+        const isTw = /^\d{4,6}[A-Z]?$/.test(raw);
+        watchlist.unshift({ symbol: raw, name: raw, type: isTw ? '台股/ETF' : '美股/ETF' });
+        localStorage.setItem('laowang_watchlist_v3', JSON.stringify(watchlist));
+        renderWatchlist();
+      }
+      analyzeSymbol(raw);
+    }
+
+    function removeWatchlist(sym) {
+      watchlist = watchlist.filter(w => w.symbol !== sym);
+      localStorage.setItem('laowang_watchlist_v3', JSON.stringify(watchlist));
+      renderWatchlist();
+    }
+
+    function resetDefaultWatchlist() {
+      localStorage.removeItem('laowang_watchlist_v3');
+      location.reload();
+    }
+
+    // ==================== 5. 分頁二：手動條件推演邏輯 ====================
+    function runManualSim() {
+      const checked = Array.from(document.querySelectorAll('.sim-chk:checked')).map(c => c.value);
+      const has = v => checked.includes(v);
+
+      const tags = [];
+      let title = '⚖️ 均線盤整觀察中';
+      let pos = '建議持股水位：40%～50%';
+      let detail = '目前訊號尚在多空拉鋸，請嚴守「下挫看壓不看撐，多頭看撐不看壓」紀律。';
+
+      const threeYang = has('above5') && has('above10') && has('above20');
+      const threeWuNai = !has('above5') && !has('above10') && !has('above20');
+
+      if (has('above120_240') && has('above60') && threeYang) tags.push('🦅 大鵬展翅 (六線全上)');
+      else if (has('above60') && threeYang) tags.push('🐉 四海遊龍');
+      else if (threeYang) tags.push('☀️ 三陽開泰');
+
+      if (threeYang && has('closedBearGap')) tags.push('🀄 聽三條聽中 (完全胡牌)');
+      if (has('breakNeck')) tags.push('🌌 海闊天空 萬里無雲');
+      if (has('highVolBreakLow')) tags.push('💀 兇多吉少 (跌破天量低點)');
+      if (has('highVolBreakHigh')) tags.push('🔥 天量成功換手');
+      if (has('falseBreakout')) tags.push('🪤 假突破真破底');
+      if (has('falseBreakdown')) tags.push('💎 假跌破 / W底黃金右腳');
+      if (has('mTopHeadShoulder')) tags.push('📉 跌破 M頭/頭肩頂頸線');
+      if (has('islandTop')) tags.push('🏝️ 孤島反轉見頂');
+      if (has('highBias')) tags.push('⚠️ 正乖離過大勿追高');
+      if (has('kdHighDead')) tags.push('📉 KD > 80 高檔死叉');
+      if (has('kdLowGold')) tags.push('📈 KD < 20 低檔金叉');
+
+      if (has('highVolBreakLow') || has('falseBreakout') || has('mTopHeadShoulder') || has('islandTop')) {
+        title = '🛑 強烈避險 / 停損賣出訊號！';
+        pos = '建議持股水位：30% 以下甚至空手 (手綁起來)';
+        detail = '高檔爆天量跌破低點、假突破或頭部頸線失守屬於高度危險反轉訊號！立即執行停損或清倉，嚴禁向下找支撐攤平。';
+      } else if (threeWuNai) {
+        title = '🌧️ 三聲無奈翻空：執行「先賣再買」避險';
+        pos = '建議持股水位：30% 以下';
+        detail = '同時跌破 5MA、10MA 與月線，短中期全面翻空。先果斷賣出避開主跌段，若日後快速站回月線再買回來即可。';
+      } else if (!has('above10') && has('above20')) {
+        title = '📤 跌破 10MA 生命線：個股波段全數出場';
+        pos = '建議持股水位：降至 30%';
+        detail = '一條線波段戰法宣告結束，先全數獲利了結，觀察月線支撐是否守穩。';
+      } else if (!has('above5') && has('above10')) {
+        title = '✂️ 跌破 5MA：減碼一半持股，剩餘守 10MA';
+        pos = '建議持股水位：降至 50%';
+        detail = '極短線轉弱先減碼一半鎖利，只要 10MA 生命線與多方缺口未封閉，剩餘一半續抱。';
+      } else if (threeYang && (has('breakNeck') || has('closedBearGap') || has('above60'))) {
+        title = '🚀 多頭全面轉強：順勢分批加碼操作！';
+        pos = '建議持股水位：70%～85% 以上';
+        detail = `已確認站穩三線並具備${has('breakNeck') ? '突破頸線(海闊天空)' : '封閉空方缺口(聽三條聽中)'}動能。${has('highBias') ? '但因目前正乖離過大，切勿單日追高，等拉回 5MA 再切入！' : '可積極操作族群最強領頭羊，不買落後補漲股。'}`;
+      } else if (has('tangledMA')) {
+        title = '🪢 均線糾結雙巴期：切換「區間/缺口替代法」';
+        pos = '建議持股水位：30%～50%';
+        detail = '停止參考天天騙線的 5MA/10MA，改以「橫盤區間低點」或「多方缺口下緣」作為唯一防守底線。';
+      }
+
+      document.getElementById('simTitle').textContent = title;
+      document.getElementById('simPositionBadge').textContent = pos;
+      document.getElementById('simTags').innerHTML = tags.map(t => `<span class="px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs font-bold">${t}</span>`).join('');
+      document.getElementById('simDetail').textContent = detail;
+    }
+
+    // ==================== 6. 分頁三：完整 7 大模組 SOP 總覽庫 ====================
+    function renderEncyclopedia() {
+      const modules = [
+        {
+          title: '一、 六線架構、均線斜率與三日確認濾網',
+          color: 'amber',
+          items: [
+            ['5日均線 (5MA)', '極短線強弱指標。跌破代表極短線轉弱，個股減碼一半（總水位上限降至 50%）。'],
+            ['10日均線 (10MA)', '波段多頭生命線（「一條線戰法」）。跌破代表該個股波段結束，全數獲利了結/停損。'],
+            ['20日均線 (月線)', '中期多空分界線。跌破月線代表中期轉弱、短線翻空。'],
+            ['60日均線 (季線)', '長期趨勢生命線。跌破季線代表長線走勢岌岌可危。'],
+            ['120MA & 240MA (半年/年線)', '長線牛熊最終分界。六線全上稱「大鵬展翅」；跌破年線稱「六線全破」步入熊市。'],
+            ['20周 & 60周均線', '大盤/美股/大型權值股長線方向。連續兩週跌破 20周線，長線資金必須出場。'],
+            ['均線斜率與三日濾網', '均線「上彎」才有助漲力道，「下彎」易有蓋頭反壓；突破或跌破關鍵線需連續 3 日站穩確認。']
+          ]
+        },
+        {
+          title: '二、 組合型態、關鍵長紅 K 棒與乖離率機制',
+          color: 'emerald',
+          items: [
+            ['三陽開泰 / 三聲無奈', '同時站上 5/10/20MA 為三陽開泰翻多；一舉跌破 5/10/20MA 為三聲無奈果斷停損。'],
+            ['四海遊龍 / 四面楚歌', '同時站上 5/10/20/60MA 為四海遊龍；同時跌破含季線所有均線為四面楚歌。'],
+            ['海闊天空 / 平地一聲雷', '帶量突破前高天花板稱海闊天空；均線糾結後爆量長紅突破稱平地一聲雷。'],
+            ['假突破 vs. 假跌破', '突破頸線後迅速跌破 5MA/頸線為假突破真破底；跌破前低後迅速站回為假跌破真穿頭。'],
+            ['W底 / M頭 / 頭肩頂測距', 'W底拉回不破前低為黃金右腳；M頭與頭肩頂跌破頸線後，將頭部至頸線垂直距離向下等幅投射滿足點。'],
+            ['關鍵長紅低點與中關', '起漲爆量長紅的「低點」為絕對防守底線，「實體一半中關」為強勢整理支撐。'],
+            ['正負乖離過大警示', '急漲遠離 5MA（正乖離 >5%~8%）嚴禁追高；急跌遠離均線勿殺在阿呆谷。']
+          ]
+        },
+        {
+          title: '三、 缺口理論、「聽三條聽中」與孤島反轉',
+          color: 'purple',
+          items: [
+            ['多方缺口 / 空方缺口', '多方缺口下緣未封閉前多頭不變；高檔向下空方缺口未封閉前整體維持空方。'],
+            ['聽三條聽中 (完全胡牌)', '同時站上 5/10/20MA 稱為「聽三條」，進一步封閉上方空方缺口稱為「聽中」，雙滿足才算完全胡牌。'],
+            ['孤島反轉 (島狀反轉)', '高檔先向上跳空竭盡缺口，數日後又向下跳空缺口形成孤島，為強烈見頂反轉訊號。'],
+            ['除權息還原缺口原則', '判讀台股與高股息 ETF 趨勢時，必須切換為「還原日線圖」，不可將除權息跳空誤判為空方缺口。']
+          ]
+        },
+        {
+          title: '四、 成交量結構與爆大量換手機制',
+          color: 'rose',
+          items: [
+            ['兇多吉少 vs. 成功換手', '高檔爆天量後跌破該日低點為兇多吉少（強烈賣出）；若能迅速收復並突破天量高點則為成功換手。'],
+            ['低檔抄底換手', '個股跌深後爆波段最大量且守住該日低點，代表主力進場抄底，為止跌買點。'],
+            ['腰斬性量縮 / 避雷針', '高檔創高但成交量腰斬（潛水無大魚）必面臨回檔；高檔開高走低爆量長上影線跌破低點為主力倒貨。'],
+            ['處置交易破壞', '突破關鍵時刻被列入分盤處置，因成交量被迫萎縮，極易導致突破失敗。']
+          ]
+        },
+        {
+          title: '五、 籌碼指標、融資維持率與 KD 極端位階',
+          color: 'sky',
+          items: [
+            ['100張以下散戶反指標', '散戶持股比例上升股價漲不動；散戶大砍拋售退場時，常為波段低點。'],
+            ['土洋同步 / 融券軋空', '外資與投信同步大買籌碼最集中；融券大減代表軋空結束高檔易見頂。'],
+            ['融資維持率斷頭潮', '股價跌融資增為籌碼惡化；當大盤融資維持率跌破 140%～135% 引發斷頭潮時，往往是落底訊號。'],
+            ['KD 極端位階 (80 / 20)', 'KD > 80 死亡交叉為高檔轉弱減碼；KD < 20 黃金交叉為低檔止跌；20~80 視為雜訊。']
+          ]
+        },
+        {
+          title: '六、 防洗盤與騙線的三大轉化機制',
+          color: 'teal',
+          items: [
+            ['1. 改看周 K 線 (20周線)', '短線均線上下雙巴時，拉長週期改看 20周線，未跌破前長多趨勢未破壞。'],
+            ['2. 改看區間景線', '停止參考天天變動的短均線，直接抓近期橫盤區間低點防守。'],
+            ['3. 改看多方缺口下緣', '以起漲發動的多方缺口下緣為最終停損位，缺口未補前皆視為洗盤。']
+          ]
+        },
+        {
+          title: '七、 資金控管水位與四大核心看盤心法',
+          color: 'orange',
+          items: [
+            ['動態持股水位 SOP', '海闊天空/四海遊龍 70%~85%+ ｜ 跌破 5MA 降至 50% ｜ 跌破 10MA 降至 30% ｜ 三聲無奈/四面楚歌 30%以下或空手綁手。'],
+            ['先賣再買 & 看大作小', '破線先賣避開腰斬，站回再買回；台股族群關注美股龍頭（如 Nvidia、美光），美股未三陽開泰前台股反彈視作短打。'],
+            ['四大核心看盤心法', '① 下跌看壓不看撐，多頭看撐不看壓 ② 買最強領頭羊，絕不買落後補漲 ③ 不看單一 K 棒，看趨勢與關鍵位階 ④ 停損要趁早，停損不是錯，錯是沒有買回來。']
+          ]
+        }
+      ];
+
+      const glossary = [
+        [
+          ['5MA／10MA／20MA', '分別是最近 5、10、20 個交易日收盤價的平均，用來觀察短、中期趨勢；MA 是移動平均線。'],
+          ['60MA／120MA／240MA', '分別約代表一季、半年、一年的交易日均價，用來看較長期趨勢。'],
+          ['周 K／20周線', '每根周 K 彙整一週價格；20周線是最近 20 週的平均價格，較不受每日波動影響。'],
+          ['均線上彎／下彎', '比較均線近期與先前數值：上升表示平均成本走高，下彎表示平均成本走低；不代表價格必然延續方向。'],
+          ['三日確認濾網', '突破或跌破後觀察是否連續三個交易日維持在線上或線下，用來減少單日假訊號。']
+        ],
+        [
+          ['三陽開泰／三聲無奈', '收盤同時高於／低於 5MA、10MA、20MA 的狀態名稱，代表短中期均線位置偏多／偏弱。'],
+          ['四海遊龍／四面楚歌', '在三線條件上再看 60MA：站上四條線／跌破短中期線與季線。'],
+          ['海闊天空／平地一聲雷', '前者指價格帶量突破一段期間前高；後者指均線整理後出現帶量長紅突破。'],
+          ['假突破／假跌破', '價格突破關鍵價位後很快跌回，或跌破後迅速站回；需按實際價位與收盤確認。'],
+          ['W底／M頭／頭肩頂', '常見價格型態名稱；型態是否成立需看頸線突破或跌破，不能只靠外觀判定。'],
+          ['關鍵長紅低點／中關', '長紅 K 棒的最低價與實體中點；可作觀察支撐位，跌破不保證必然續跌。'],
+          ['正乖離／負乖離', '現價相對均線高出／低於的百分比；偏離越大表示短期拉開越遠，不是單獨的買賣訊號。']
+        ],
+        [
+          ['多方缺口／空方缺口', '相鄰交易日高低價之間沒有重疊的區域；價格之後回到缺口區並穿越判定邊界時，視為封閉。'],
+          ['聽三條／聽中', '「聽三條」指站上 5MA、10MA、20MA；「聽中」在本戰法中指再封閉上方空方缺口。'],
+          ['孤島反轉', '先有向上跳空，之後再向下跳空，使中間交易區與兩側隔開的型態；本程式以未封閉缺口判斷其持續性。'],
+          ['還原權值／還原日線', '將除權息影響調整到歷史價格，方便比較總報酬走勢；調整後價格不等同當時實際成交價。']
+        ],
+        [
+          ['天量', '在設定觀察期間內，成交量相對最大的交易日；本程式常以近 20 日最大量 K 棒作基準。'],
+          ['天量成功換手', '收盤突破基準天量 K 棒高點的技術條件；訊號持續至收盤跌破該 K 棒低點。這是價格量能推論，不代表能確認實際籌碼轉手。'],
+          ['兇多吉少', '收盤跌破近 20 日最大量 K 棒低點時的警示，表示該大量區支撐失守。'],
+          ['爆量長紅／長上影線', '爆量指成交量顯著增加；長紅指收盤高於開盤且實體較長；長上影線代表盤中高點到收盤間回落較多。'],
+          ['分盤處置', '交易所對特定股票採取分時撮合等措施；交易頻率和成交量可能改變。']
+        ],
+        [
+          ['散戶持股比例', '小額持有人持股占比的統計指標；解讀需依資料來源與期間，不能單獨推斷買賣方向。'],
+          ['土洋同步', '外資（洋）與投信等本地法人（土）同方向買賣的俗稱；仍需看實際籌碼資料。'],
+          ['融資／融券', '融資是借款買股，融券是借股賣出；兩者增加都會改變市場槓桿與回補風險。'],
+          ['融資維持率／斷頭', '擔保品市值相對融資金額的比例；低於券商規定可能需補繳，未補足可能遭處分。'],
+          ['KD／黃金交叉／死亡交叉', 'KD 是依近期高低區間計算的動能指標；K 線上穿 D 線稱黃金交叉，下穿稱死亡交叉。高低區間不是保證反轉。']
+        ],
+        [
+          ['騙線／雙巴', '價格短暫突破或跌破後又反向，令追隨訊號的操作容易連續受損。'],
+          ['區間低點', '近期盤整範圍內反覆測試的低位，作為觀察區間支撐的參考。'],
+          ['多方缺口下緣', '未封閉向上缺口的下邊界；價格回落穿越此位代表缺口支撐失效。']
+        ],
+        [
+          ['持股水位／保留現金', '建議資金中投入股票的比例與未投入比例；是風險管理參考，不是個人化投資建議。'],
+          ['停損／先賣再買', '預先設定風險條件後減少部位，待價格重新符合條件再評估；可能遇到跳空或滑價。'],
+          ['看大作小', '先觀察大盤或主要市場方向，再評估個股操作；大盤與個股仍可能走勢不同。'],
+          ['領頭羊／落後補漲', '領頭羊指相對強勢族群或個股；落後補漲指先前落後、之後嘗試追趕的標的。'],
+          ['關鍵位階／單一 K 棒', '關鍵位階是均線、前高低或缺口等重要價格區；單日 K 棒需放在趨勢與成交量脈絡中解讀。']
+        ]
+      ];
+
+      document.getElementById('encyclopediaContent').innerHTML = modules.map(m => `
+        <div class="glass-card rounded-2xl p-5">
+          <div class="flex items-center justify-between gap-3 mb-3 pb-2 border-b border-slate-800">
+            <h3 class="text-base font-black text-${m.color}-400">${m.title}</h3>
+            <button onclick="openModuleInfo(${modules.indexOf(m)})" class="shrink-0 px-3 py-1 rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 text-xs font-bold">ℹ️ 名詞解說</button>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            ${m.items.map(([k, v]) => `
+              <div class="bg-slate-950/70 rounded-xl p-3 border border-slate-800/80">
+                <div class="text-xs font-bold text-white mb-1">${k}</div>
+                <div class="text-xs text-slate-400 leading-relaxed">${v}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+
+      if (!document.getElementById('moduleInfoDialog')) {
+        document.body.insertAdjacentHTML('beforeend', `
+          <div id="moduleInfoDialog" class="hidden fixed inset-0 z-50 bg-slate-950/80 p-4 items-center justify-center" onclick="if(event.target===this) closeModuleInfo()">
+            <section class="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+              <div class="flex items-start justify-between gap-4 mb-4">
+                <div><div class="text-xs text-sky-300 font-bold mb-1">SOP 名詞解說</div><h3 id="moduleInfoTitle" class="text-lg font-black text-white"></h3></div>
+                <button onclick="closeModuleInfo()" class="px-3 py-1 rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700" aria-label="關閉名詞解說">✕</button>
+              </div>
+              <div id="moduleInfoTerms" class="space-y-3"></div>
+              <p class="text-[11px] text-slate-500 mt-4">名詞解說用於理解技術指標；行情訊號有誤差，不保證未來走勢。</p>
+            </section>
+          </div>`);
+      }
+      window.moduleGlossary = glossary;
+      window.moduleTitles = modules.map(m => m.title);
+    }
+
+    function openModuleInfo(index) {
+      const dialog = document.getElementById('moduleInfoDialog');
+      if (!dialog || !window.moduleGlossary?.[index]) return;
+      document.getElementById('moduleInfoTitle').textContent = window.moduleTitles[index];
+      document.getElementById('moduleInfoTerms').innerHTML = window.moduleGlossary[index].map(([term, explanation]) => `
+        <article class="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+          <h4 class="text-sm font-bold text-amber-300 mb-1">${term}</h4>
+          <p class="text-sm leading-relaxed text-slate-300">${explanation}</p>
+        </article>`).join('');
+      dialog.classList.remove('hidden');
+      dialog.classList.add('flex');
+    }
+
+    function closeModuleInfo() {
+      const dialog = document.getElementById('moduleInfoDialog');
+      if (!dialog) return;
+      dialog.classList.add('hidden');
+      dialog.classList.remove('flex');
+    }
+  </script>
+</body>
+</html>

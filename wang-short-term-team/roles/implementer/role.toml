@@ -1,0 +1,5 @@
+description = "Implement the approved plan in the supplied repository and verify it."
+start = "existing"
+exec_environment = true
+prior_verification = false
+max_concurrent = 1

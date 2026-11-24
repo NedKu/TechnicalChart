@@ -1,0 +1,5 @@
+description = "Turn the request into an executable plan and acceptance criteria."
+start = "existing"
+exec_environment = false
+prior_verification = false
+max_concurrent = 1
