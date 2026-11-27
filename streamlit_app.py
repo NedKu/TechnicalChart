@@ -46,14 +46,20 @@ def ticker_candidates(symbol: str) -> list[str]:
 @st.cache_data(ttl=900, show_spinner=False)
 def load_history(symbol: str, period: str = "1y") -> dict:
     errors = []
+    fetch_period = "max" if period in {"20y", "30y"} else period
     for ticker in ticker_candidates(symbol):
         try:
             frame = yf.Ticker(ticker).history(
-                period=period, interval="1d", auto_adjust=True, timeout=15
+                period=fetch_period, interval="1d", auto_adjust=True, timeout=15
             )
             if frame is None or frame.empty:
                 errors.append(f"{ticker}: 無歷史資料")
                 continue
+            if period in {"20y", "30y"}:
+                import pandas as pd
+
+                cutoff = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=int(period[:-1]))
+                frame = frame.loc[frame.index >= cutoff]
             candles = []
             for date, row in frame.iterrows():
                 values = [row[col] for col in ("Open", "High", "Low", "Close", "Volume")]
@@ -243,6 +249,40 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
         "_防守候選價": supports,
         "_關鍵防守價": primary_support,
     }
+
+
+def backtest_lao_wang(candles: list[dict], start: date, end: date,
+                      initial_capital: float = 100_000) -> dict:
+    """Apply each close's suggested exposure to the following session."""
+    in_range = [bar for bar in candles if start.isoformat() <= bar["date"] <= end.isoformat()]
+    if len(in_range) < 2:
+        raise ValueError("所選區間至少需要兩個交易日。")
+    indexed = {bar["date"]: i for i, bar in enumerate(candles)}
+    first_index, last_index = indexed[in_range[0]["date"]], indexed[in_range[-1]["date"]]
+    if first_index < 30:
+        raise ValueError("所選開始日缺少足夠的前置日 K，至少需要 30 個交易日暖機。")
+
+    value = float(initial_capital)
+    curve = [{"date": in_range[0]["date"], "value": value}]
+    previous_exposure = int(summarize_lao_wang(candles[:first_index])["建議持股水位"].rstrip("%")) / 100
+    for i in range(first_index + 1, last_index + 1):
+        prior_close = float(candles[i - 1]["close"])
+        close = float(candles[i]["close"])
+        value *= 1 + previous_exposure * (close / prior_close - 1)
+        curve.append({"date": candles[i]["date"], "value": value})
+        if i < last_index:
+            previous_exposure = int(summarize_lao_wang(candles[:i + 1])["建議持股水位"].rstrip("%")) / 100
+
+    elapsed_days = (date.fromisoformat(in_range[-1]["date"]) - date.fromisoformat(in_range[0]["date"])).days
+    total_return = value / initial_capital - 1
+    annualized_return = (value / initial_capital) ** (365.25 / elapsed_days) - 1 if elapsed_days else 0.0
+    peak, max_drawdown = initial_capital, 0.0
+    for point in curve:
+        peak = max(peak, point["value"])
+        max_drawdown = min(max_drawdown, point["value"] / peak - 1)
+    return {"curve": curve, "final_value": value, "total_return": total_return,
+            "annualized_return": annualized_return, "max_drawdown": max_drawdown,
+            "sessions": len(in_range) - 1}
 
 
 def indicator_snapshot(candles: list[dict]) -> dict:
@@ -437,9 +477,9 @@ def main() -> None:
         st.sidebar.warning(st.session_state.watchlist_message)
     raw_symbol = selected
     symbol = re.sub(r"\.(TW|TWO)$", "", raw_symbol)
-    data_period = st.sidebar.selectbox("行情下載期間", ["1mo", "3mo", "6mo", "1y", "2y", "3y", "5y"], index=3,
-                                        format_func=lambda p: {"1mo":"1 個月", "3mo":"3 個月", "6mo":"6 個月", "1y":"1 年", "2y":"2 年", "3y":"3 年", "5y":"5 年"}[p])
-    st.sidebar.caption("預設下載 1 年日 K；選擇較長區間時才下載更多歷史資料。行情快取 15 分鐘。")
+    data_period = st.sidebar.selectbox("行情下載期間", ["1mo", "3mo", "6mo", "1y", "2y", "3y", "5y", "20y", "30y"], index=3,
+                                        format_func=lambda p: {"1mo":"1 個月", "3mo":"3 個月", "6mo":"6 個月", "1y":"1 年", "2y":"2 年", "3y":"3 年", "5y":"5 年", "20y":"20 年", "30y":"30 年"}[p])
+    st.sidebar.caption("選擇較長區間時會下載更多歷史日 K；20 年與 30 年會由 Yahoo Finance 提供的最長歷史資料截取。行情快取 15 分鐘。")
     try:
         with st.spinner(f"讀取 {symbol} 的 {data_period} 日 K…"):
             payload = load_history(raw_symbol, data_period)
@@ -487,6 +527,32 @@ def main() -> None:
     prompt_data = json.dumps(review_prompt, ensure_ascii=True).replace("<", "\\u003c")
     html = html.replace(PROMPT_MARKER, f"const STREAMLIT_REVIEW_PROMPT = {prompt_data};", 1)
     components.html(html, height=1300, scrolling=True)
+
+    st.subheader("📈 老王戰法歷史回測")
+    st.caption("收盤訊號從下一交易日生效；使用還原權值日 K，未計手續費、稅費、滑價與股息稅。")
+    backtest_min = date.fromisoformat(payload["candles"][min(30, len(payload["candles"]) - 1)]["date"])
+    with st.form(f"backtest_form_{raw_symbol}_{data_period}"):
+        range_col1, range_col2, capital_col = st.columns(3)
+        backtest_start = range_col1.date_input("回測開始日", value=max(backtest_min, last_day - timedelta(days=365)),
+                                               min_value=backtest_min, max_value=last_day)
+        backtest_end = range_col2.date_input("回測結束日", value=last_day, min_value=backtest_min, max_value=last_day)
+        capital = capital_col.number_input("起始資金", min_value=1_000, value=100_000, step=10_000)
+        run_backtest = st.form_submit_button("開始回測", type="primary")
+    if run_backtest:
+        if backtest_start > backtest_end:
+            st.warning("回測開始日必須早於或等於結束日。")
+        else:
+            try:
+                result = backtest_lao_wang(payload["candles"], backtest_start, backtest_end, capital)
+                metric1, metric2, metric3, metric4 = st.columns(4)
+                metric1.metric("期末資產", f"{result['final_value']:,.0f}")
+                metric2.metric("區間報酬", f"{result['total_return']:+.2%}")
+                metric3.metric("年均複合報酬", f"{result['annualized_return']:+.2%}")
+                metric4.metric("最大回撤", f"{result['max_drawdown']:.2%}")
+                st.caption(f"期間 {backtest_start} 至 {backtest_end}；計入 {result['sessions']} 個交易日報酬。年均回報以複合年化公式計算。")
+                st.line_chart({"策略資產": {point["date"]: point["value"] for point in result["curve"]}}, x_label="日期", y_label="資產")
+            except ValueError as exc:
+                st.info(str(exc))
 
     st.subheader("📋 觀察名單總覽")
     st.caption(f"依 {as_of_text} 當天及之前的日 K 計算；價格為還原權值資料。")

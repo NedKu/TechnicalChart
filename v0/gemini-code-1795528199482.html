@@ -109,6 +109,8 @@
             <button onclick="setYears('2y')" id="range-2y" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">2Y</button>
             <button onclick="setYears('3y')" id="range-3y" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">3Y</button>
             <button onclick="setYears('5y')" id="range-5y" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">5Y</button>
+            <button onclick="setYears('20y')" id="range-20y" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">20Y</button>
+            <button onclick="setYears('30y')" id="range-30y" class="yr-btn px-2 py-0.5 rounded text-slate-400 hover:text-white">30Y</button>
           </div>
         </div>
       </div>
@@ -492,7 +494,7 @@
 
     function setYears(range) {
       currentRange = range;
-      ['1m', '3m', '6m', '1y', '2y', '3y', '5y'].forEach(option => {
+      ['1m', '3m', '6m', '1y', '2y', '3y', '5y', '20y', '30y'].forEach(option => {
         const b = document.getElementById(`range-${option}`);
         if (option === range) {
           b.className = 'yr-btn px-2 py-0.5 rounded bg-rose-600 text-white font-bold';
@@ -869,7 +871,7 @@ if __name__ == '__main__':
         bias10: ma10[i] ? +(((c.close - ma10[i]) / ma10[i]) * 100).toFixed(2) : null
       }));
 
-      const daysLimit = { '1m': 21, '3m': 63, '6m': 126, '1y': 252, '2y': 504, '3y': 756, '5y': 1260 }[currentRange] || 252;
+      const daysLimit = { '1m': 21, '3m': 63, '6m': 126, '1y': 252, '2y': 504, '3y': 756, '5y': 1260, '20y': 5040, '30y': 7560 }[currentRange] || 252;
       currentCandles = enriched.slice(-daysLimit);
       runLaoWangDiagnostic(currentCandles, symbol, name);
     }
@@ -1224,7 +1226,7 @@ if __name__ == '__main__':
       ctx.clearRect(0, 0, width, height);
 
       // 依年份選擇顯示根數 (1Y最多顯示150根，2Y~5Y依比例取樣或顯示最近220根確保K線清晰)
-      const viewCount = { '1m': 21, '3m': 63, '6m': 126, '1y': 252, '2y': 504, '3y': 756, '5y': 1260 }[currentRange] || 252;
+      const viewCount = { '1m': 21, '3m': 63, '6m': 126, '1y': 252, '2y': 504, '3y': 756, '5y': 1260, '20y': 5040, '30y': 7560 }[currentRange] || 252;
       const data = allCandles.slice(-viewCount);
       const startIdxOffset = allCandles.length - data.length;
 
