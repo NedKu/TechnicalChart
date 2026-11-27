@@ -670,17 +670,20 @@ def main() -> None:
         return [css if column in {"建議持股水位", "水位變化"} else "" for column in row.index]
 
     st.caption("水位變化以今天首次查詢為基準；上升標綠、下降標紅，變化會保留在目前瀏覽工作階段。")
-    st.dataframe(
+    summary_style = (
         summary_frame.style
         .apply(highlight_position_change, axis=1)
         .set_properties(
             subset=["操作結論", "持續中狀態"],
-            **{"white-space": "pre-wrap", "overflow-wrap": "anywhere", "word-break": "break-word"},
-        ),
-        use_container_width=True,
-        height=1000,
-        hide_index=True,
+            **{"white-space": "normal", "overflow-wrap": "anywhere", "word-break": "break-word", "vertical-align": "top"},
+        )
+        .set_table_styles([
+            {"selector": "table", "props": [("table-layout", "fixed"), ("width", "100%")]},
+            {"selector": "th", "props": [("white-space", "normal"), ("overflow-wrap", "anywhere")]},
+        ])
+        .hide(axis="index")
     )
+    st.table(summary_style)
 
 if __name__ == "__main__":
     main()
