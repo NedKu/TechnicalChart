@@ -161,9 +161,15 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
             active_key_long_red = {"date": row.date, "low": float(row.low)}
     active_status = []
     if open_bull_gaps:
-        active_status.append(f"多方缺口 {len(open_bull_gaps)} 個未封閉")
+        gap = open_bull_gaps[-1]
+        active_status.append(
+            f"最新多方缺口 {gap['date']} 未封閉（{gap['bottom']:.2f}–{gap['top']:.2f}）"
+        )
     if open_bear_gaps:
-        active_status.append(f"空方缺口 {len(open_bear_gaps)} 個未封閉")
+        gap = open_bear_gaps[-1]
+        active_status.append(
+            f"最新空方缺口 {gap['date']} 未封閉（{gap['bottom']:.2f}–{gap['top']:.2f}）"
+        )
     island_bear = next((
         bear for bear in open_bear_gaps
         if any(bear["idx"] > bull["idx"] for bull in open_bull_gaps)
@@ -235,7 +241,7 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
     ]
     return {
         "操作結論": conclusion,
-        "持續中狀態": "；".join(active_status) if active_status else "目前無未解除的結構訊號",
+        "持續中狀態": "；".join(active_status) if active_status else "目前沒有未封閉缺口或持續中的結構訊號",
         "建議持股水位": f"{position}%",
         "保留現金": f"{100 - position}%",
         "收盤價": round(close, 2),
