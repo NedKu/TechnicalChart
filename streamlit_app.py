@@ -600,8 +600,12 @@ def main() -> None:
         with st.expander("📋 查看逐日買賣與持股水位紀錄（點此展開）", expanded=False):
             import pandas as pd
 
-            st.dataframe(pd.DataFrame(result["log_rows"], columns=result["log_columns"]),
-                         use_container_width=True, hide_index=True)
+            log_frame = pd.DataFrame(result["log_rows"], columns=result["log_columns"])
+            log_style = log_frame.style.set_properties(
+                subset=["配置動作", "老王戰法操作結論", "持續中訊號（含未封閉缺口）"],
+                **{"white-space": "pre-wrap", "overflow-wrap": "anywhere", "word-break": "break-word"},
+            )
+            st.dataframe(log_style, use_container_width=True, height=700, hide_index=True)
         st.download_button(
             "下載回測操作紀錄（CSV）",
             data=result["log_csv"],
@@ -669,7 +673,10 @@ def main() -> None:
     st.dataframe(
         summary_frame.style
         .apply(highlight_position_change, axis=1)
-        .set_properties(subset=["操作結論", "持續中狀態"], **{"white-space": "normal", "height": "auto"}),
+        .set_properties(
+            subset=["操作結論", "持續中狀態"],
+            **{"white-space": "pre-wrap", "overflow-wrap": "anywhere", "word-break": "break-word"},
+        ),
         use_container_width=True,
         height=1000,
         hide_index=True,
