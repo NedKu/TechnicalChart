@@ -283,6 +283,7 @@ def backtest_lao_wang(candles: list[dict], start: date, end: date,
         log_rows.append([
             candles[i - 1]["date"], candles[i]["date"], next_action,
             prior_position_pct, f"{position_pct}%", signal_summary["操作結論"],
+            signal_summary["持續中狀態"],
             f"{prior_close:.2f}", f"{close:.2f}", f"{market_return:+.2%}",
             f"{strategy_return:+.2%}", f"{value:.2f}",
         ])
@@ -309,8 +310,8 @@ def backtest_lao_wang(candles: list[dict], start: date, end: date,
     output = io.StringIO()
     writer = csv.writer(output)
     log_columns = ["訊號日期", "報酬日期", "配置動作", "前一持股水位", "本次持股水位",
-                   "老王戰法判斷／調整原因", "前收盤", "收盤", "標的日報酬",
-                   "策略日報酬", "回測資產"]
+                   "老王戰法操作結論", "持續中訊號（含未封閉缺口）", "前收盤", "收盤",
+                   "標的日報酬", "策略日報酬", "回測資產"]
     writer.writerow(log_columns)
     writer.writerows(log_rows)
     return {"curve": curve, "final_value": value, "total_return": total_return,
