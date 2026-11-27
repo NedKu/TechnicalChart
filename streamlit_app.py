@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -206,6 +206,8 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
     primary_support = max(valid_supports, key=lambda level: level["價格"]) if valid_supports else {
         "名稱": "最近交易日低點（參考價）", "價格": float(last["low"])
     }
+
+
     slope_status = lambda period: (
         "上彎" if float(last[f"ma{period}"]) > float(frame.iloc[-4][f"ma{period}"])
         else "下彎或持平"
@@ -244,6 +246,39 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
         "_關鍵防守價": primary_support,
     }
 
+def backtest_lao_wang(candles: list[dict], start: date, end: date,
+                      initial_capital: float = 100_000) -> dict:
+    """Apply each close's suggested exposure to the following session."""
+    in_range = [bar for bar in candles if start.isoformat() <= bar["date"] <= end.isoformat()]
+    if len(in_range) < 2:
+        raise ValueError("所選區間至少需要兩個交易日。")
+    indexed = {bar["date"]: i for i, bar in enumerate(candles)}
+    first_index, last_index = indexed[in_range[0]["date"]], indexed[in_range[-1]["date"]]
+    if first_index < 30:
+        raise ValueError("所選開始日缺少足夠的前置日 K，至少需要 30 個交易日暖機。")
+
+    value = float(initial_capital)
+    curve = [{"date": in_range[0]["date"], "value": value}]
+    previous_exposure = int(summarize_lao_wang(candles[:first_index])["建議持股水位"].rstrip("%")) / 100
+    for i in range(first_index + 1, last_index + 1):
+        prior_close = float(candles[i - 1]["close"])
+        close = float(candles[i]["close"])
+        value *= 1 + previous_exposure * (close / prior_close - 1)
+        curve.append({"date": candles[i]["date"], "value": value})
+        if i < last_index:
+            previous_exposure = int(summarize_lao_wang(candles[:i + 1])["建議持股水位"].rstrip("%")) / 100
+
+    elapsed_days = (date.fromisoformat(in_range[-1]["date"]) - date.fromisoformat(in_range[0]["date"])).days
+    total_return = value / initial_capital - 1
+    annualized_return = (value / initial_capital) ** (365.25 / elapsed_days) - 1 if elapsed_days > 0 else 0.0
+    peak = initial_capital
+    max_drawdown = 0.0
+    for point in curve:
+        peak = max(peak, point["value"])
+        max_drawdown = min(max_drawdown, point["value"] / peak - 1)
+    return {"curve": curve, "final_value": value, "total_return": total_return,
+            "annualized_return": annualized_return, "max_drawdown": max_drawdown,
+            "sessions": len(in_range) - 1}
 
 def indicator_snapshot(candles: list[dict]) -> dict:
     closes = [float(bar["close"]) for bar in candles]
@@ -487,6 +522,32 @@ def main() -> None:
     prompt_data = json.dumps(review_prompt, ensure_ascii=True).replace("<", "\\u003c")
     html = html.replace(PROMPT_MARKER, f"const STREAMLIT_REVIEW_PROMPT = {prompt_data};", 1)
     components.html(html, height=1300, scrolling=True)
+
+    st.subheader("📈 老王戰法歷史回測")
+    st.caption("收盤訊號從下一交易日生效；使用還原權值日 K，未計手續費、稅費、滑價與股息稅。")
+    earliest_backtest = max(30, 0)
+    backtest_min = date.fromisoformat(payload["candles"][min(earliest_backtest, len(payload["candles"]) - 1)]["date"])
+    range_col1, range_col2, capital_col = st.columns(3)
+    backtest_start = range_col1.date_input("回測開始日", value=max(backtest_min, last_day - timedelta(days=365)),
+                                           min_value=backtest_min, max_value=last_day, key=f"bt_start_{raw_symbol}_{data_period}")
+    backtest_end = range_col2.date_input("回測結束日", value=last_day, min_value=backtest_min, max_value=last_day,
+                                         key=f"bt_end_{raw_symbol}_{data_period}")
+    capital = capital_col.number_input("起始資金", min_value=1_000, value=100_000, step=10_000,
+                                       key=f"bt_capital_{raw_symbol}")
+    if backtest_start > backtest_end:
+        st.warning("回測開始日必須早於或等於結束日。")
+    else:
+        try:
+            result = backtest_lao_wang(payload["candles"], backtest_start, backtest_end, capital)
+            metric1, metric2, metric3, metric4 = st.columns(4)
+            metric1.metric("期末資產", f"{result['final_value']:,.0f}")
+            metric2.metric("區間報酬", f"{result['total_return']:+.2%}")
+            metric3.metric("年均複合報酬", f"{result['annualized_return']:+.2%}")
+            metric4.metric("最大回撤", f"{result['max_drawdown']:.2%}")
+            st.caption(f"期間 {backtest_start} 至 {backtest_end}；計入 {result['sessions']} 個交易日報酬。年均回報以複合年化公式計算。")
+            st.line_chart({"策略資產": {point["date"]: point["value"] for point in result["curve"]}}, x_label="日期", y_label="資產")
+        except ValueError as exc:
+            st.info(str(exc))
 
     st.subheader("📋 觀察名單總覽")
     st.caption(f"依 {as_of_text} 當天及之前的日 K 計算；價格為還原權值資料。")
