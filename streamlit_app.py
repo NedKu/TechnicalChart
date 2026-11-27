@@ -651,8 +651,8 @@ def main() -> None:
 
     summary_frame = pd.DataFrame(summary_rows)
     summary_frame = summary_frame[[
-        "代號", "名稱", "操作結論", "持續中狀態", "建議持股水位", "水位變化",
-        "保留現金", "收盤價", "5MA / 10MA", "20MA / 60MA", "資料日期",
+        "代號", "名稱", "操作結論", "建議持股水位", "水位變化",
+        "保留現金", "收盤價", "5MA / 10MA", "20MA / 60MA", "資料日期", "持續中狀態",
     ]]
 
     def highlight_position_change(row):
@@ -667,8 +667,11 @@ def main() -> None:
 
     st.caption("水位變化以今天首次查詢為基準；上升標綠、下降標紅，變化會保留在目前瀏覽工作階段。")
     st.dataframe(
-        summary_frame.style.apply(highlight_position_change, axis=1),
+        summary_frame.style
+        .apply(highlight_position_change, axis=1)
+        .set_properties(subset=["操作結論", "持續中狀態"], **{"white-space": "normal", "height": "auto"}),
         use_container_width=True,
+        height=1000,
         hide_index=True,
     )
 
