@@ -603,9 +603,12 @@ def main() -> None:
             log_frame = pd.DataFrame(result["log_rows"], columns=result["log_columns"])
             log_style = log_frame.style.set_properties(
                 subset=["配置動作", "老王戰法操作結論", "持續中訊號（含未封閉缺口）"],
-                **{"white-space": "pre-wrap", "overflow-wrap": "anywhere", "word-break": "break-word"},
-            )
-            st.dataframe(log_style, use_container_width=True, height=700, hide_index=True)
+                **{"white-space": "normal", "overflow-wrap": "anywhere", "word-break": "break-word", "vertical-align": "top"},
+            ).set_table_styles([
+                {"selector": "table", "props": [("table-layout", "fixed"), ("width", "100%")]},
+                {"selector": "th", "props": [("white-space", "normal"), ("overflow-wrap", "anywhere")]},
+            ]).hide(axis="index")
+            st.table(log_style)
         st.download_button(
             "下載回測操作紀錄（CSV）",
             data=result["log_csv"],
