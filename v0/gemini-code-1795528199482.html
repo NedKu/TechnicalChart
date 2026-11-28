@@ -282,8 +282,8 @@
         </div>
         <div class="flex flex-wrap items-center justify-between gap-2 mt-2 text-[11px] text-slate-400">
           <div class="flex flex-wrap gap-3">
-            <span>🟢 綠色矩形：未封閉多方缺口 (支撐)</span>
-            <span>🔴 紅色矩形：未封閉空方缺口 (壓力)</span>
+            <span>🟢 綠色矩形：未封閉多方實體缺口 (支撐)</span>
+            <span>🔴 紅色矩形：未封閉空方實體缺口 (壓力)</span>
             <span>🟡 黃色虛線：近20日天量低點 (跌破兇多吉少)</span>
             <span>🔵 藍色虛線：關鍵爆量長紅低點</span>
           </div>
@@ -306,6 +306,7 @@
           <h4 class="text-sm font-bold text-emerald-400 mb-2.5 flex items-center gap-1.5">
             <span>2️⃣ 缺口理論、「聽三條聽中」與孤島反轉</span>
           </h4>
+          <p class="text-xs text-slate-400 mb-2">缺口以開收盤實體上下緣判斷形成與完全封閉；影線不計，形成門檻沿用 0.1%。</p>
           <div id="diagGap" class="space-y-2 text-xs text-slate-300"></div>
         </div>
 
@@ -973,51 +974,8 @@ if __name__ == '__main__':
         isTangled = ((maxM - minM) / minM) < 0.022;
       }
 
-      // 2. 缺口與孤島反轉偵測 (完整載入期間；缺口封閉前持續有效)
-      const lookback = candles;
-      let openBullGaps = [];
-      let openBearGaps = [];
-
-      for (let i = 1; i < lookback.length; i++) {
-        const cur = lookback[i];
-        const pre = lookback[i - 1];
-        // 多方缺口：今日低點 > 昨日高點
-        if (cur.low > pre.high * 1.001) {
-          let closed = false;
-          for (let j = i + 1; j < lookback.length; j++) {
-            if (lookback[j].low <= pre.high) { closed = true; break; }
-          }
-          if (!closed) {
-            openBullGaps.push({ date: cur.date, top: cur.low, bottom: pre.high, idx: len - lookback.length + i });
-          }
-        }
-        // 空方缺口：今日高點 < 昨日低點
-        if (cur.high < pre.low * 0.999) {
-          let closed = false;
-          for (let j = i + 1; j < lookback.length; j++) {
-            if (lookback[j].high >= pre.low) { closed = true; break; }
-          }
-          if (!closed) {
-            openBearGaps.push({ date: cur.date, top: pre.low, bottom: cur.high, idx: len - lookback.length + i });
-          }
-        }
-      }
-
-      // 檢查今日或昨日是否剛剛封閉空方缺口 (聽中!)
-      let justClosedBearGap = false;
-      for (let i = 1; i < lookback.length - 2; i++) {
-        const cur = lookback[i], pre = lookback[i - 1];
-        if (cur.high < pre.low * 0.999) {
-          // 檢查是否在最近2日才被封閉
-          let closedBefore = false;
-          for (let j = i + 1; j < lookback.length - 2; j++) {
-            if (lookback[j].high >= pre.low) { closedBefore = true; break; }
-          }
-          if (!closedBefore && (last.high >= pre.low || prev.high >= pre.low)) {
-            justClosedBearGap = true;
-          }
-        }
-      }
+      // 缺口形成與封閉都以開收盤實體判定。
+      const {openBullGaps, openBearGaps, justClosedBearGap} = detectBodyGaps(candles);
 
       // 孤島反轉持續到相關空方缺口封閉：前有未封閉多方缺口，後有未封閉空方缺口。
       const activeIslandTop = openBearGaps.find(bear =>
@@ -1280,20 +1238,30 @@ if __name__ == '__main__':
       drawKlineChart(candles, currentAnalysis);
     }
 
-    function historicalChartInfo(candles) {
+    function detectBodyGaps(candles) {
+      const bounds = candles.map(bar => ({low: Math.min(bar.open, bar.close), high: Math.max(bar.open, bar.close)}));
       const openBullGaps = [], openBearGaps = [];
-      let futureLow = Infinity, futureHigh = -Infinity;
-      for (let i = candles.length - 1; i >= 1; i--) {
-        const cur = candles[i], prev = candles[i - 1];
-        if (cur.low > prev.high * 1.001 && futureLow > prev.high) {
-          openBullGaps.push({date: cur.date, top: cur.low, bottom: prev.high});
+      let justClosedBearGap = false;
+      for (let i = 1; i < candles.length; i++) {
+        const cur = bounds[i], prev = bounds[i - 1];
+        if (cur.low > prev.high * 1.001) {
+          const filled = bounds.slice(i + 1).some(bar => bar.low <= prev.high);
+          if (!filled) openBullGaps.push({date: candles[i].date, idx: i, bottom: prev.high, top: cur.low});
         }
-        if (cur.high < prev.low * 0.999 && futureHigh < prev.low) {
-          openBearGaps.push({date: cur.date, top: prev.low, bottom: cur.high});
+        if (cur.high < prev.low * 0.999) {
+          let closedIndex = -1;
+          for (let j = i + 1; j < bounds.length; j++) {
+            if (bounds[j].high >= prev.low) { closedIndex = j; break; }
+          }
+          if (closedIndex < 0) openBearGaps.push({date: candles[i].date, idx: i, bottom: cur.high, top: prev.low});
+          else if (closedIndex >= candles.length - 2) justClosedBearGap = true;
         }
-        futureLow = Math.min(futureLow, cur.low);
-        futureHigh = Math.max(futureHigh, cur.high);
       }
+      return {openBullGaps, openBearGaps, justClosedBearGap};
+    }
+
+    function historicalChartInfo(candles) {
+      const {openBullGaps, openBearGaps} = detectBodyGaps(candles);
       const recent20 = candles.slice(-20);
       const maxVolBar = recent20.reduce((max, bar) => bar.volume > max.volume ? bar : max);
       const recent25 = candles.slice(-25);
@@ -1841,7 +1809,7 @@ if __name__ == '__main__':
           ['正乖離／負乖離', '現價相對均線高出／低於的百分比；偏離越大表示短期拉開越遠，不是單獨的買賣訊號。']
         ],
         [
-          ['多方缺口／空方缺口', '相鄰交易日高低價之間沒有重疊的區域；價格之後回到缺口區並穿越判定邊界時，視為封閉。'],
+          ['多方缺口／空方缺口', '相鄰交易日開收盤實體間的缺口；實體下緣取min(開盤,收盤)，上緣取max(開盤,收盤)。影線不計；後續實體觸及或越過缺口另一側邊界才算完全封閉，僅進入部分區域不算。形成門檻沿用0.1%。'],
           ['聽三條／聽中', '「聽三條」指站上 5MA、10MA、20MA；「聽中」在本戰法中指再封閉上方空方缺口。'],
           ['孤島反轉', '先有向上跳空，之後再向下跳空，使中間交易區與兩側隔開的型態；本程式以未封閉缺口判斷其持續性。'],
           ['還原權值／還原日線', '將除權息影響調整到歷史價格，方便比較總報酬走勢；調整後價格不等同當時實際成交價。']

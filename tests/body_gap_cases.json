@@ -1,0 +1,170 @@
+[
+  {
+    "name": "bullish bodies gap despite overlapping shadows",
+    "candles": [
+      {
+        "date": "2026-02-02",
+        "open": 98,
+        "close": 100,
+        "high": 108,
+        "low": 95
+      },
+      {
+        "date": "2026-02-03",
+        "open": 105,
+        "close": 104,
+        "high": 110,
+        "low": 96
+      },
+      {
+        "date": "2026-02-04",
+        "open": 103,
+        "close": 106,
+        "high": 109,
+        "low": 95
+      }
+    ],
+    "bull": [
+      {
+        "date": "2026-02-03",
+        "idx": 1,
+        "bottom": 100,
+        "top": 104
+      }
+    ],
+    "bear": []
+  },
+  {
+    "name": "bullish body touches far edge and closes gap",
+    "candles": [
+      {
+        "date": "2026-02-02",
+        "open": 98,
+        "close": 100,
+        "high": 108,
+        "low": 95
+      },
+      {
+        "date": "2026-02-03",
+        "open": 105,
+        "close": 104,
+        "high": 110,
+        "low": 96
+      },
+      {
+        "date": "2026-02-04",
+        "open": 104,
+        "close": 100,
+        "high": 109,
+        "low": 95
+      }
+    ],
+    "bull": [],
+    "bear": []
+  },
+  {
+    "name": "bearish bodies gap shadow rally does not close",
+    "candles": [
+      {
+        "date": "2026-02-02",
+        "open": 110,
+        "close": 108,
+        "high": 115,
+        "low": 100
+      },
+      {
+        "date": "2026-02-03",
+        "open": 102,
+        "close": 104,
+        "high": 115,
+        "low": 99
+      },
+      {
+        "date": "2026-02-04",
+        "open": 104,
+        "close": 107,
+        "high": 115,
+        "low": 98
+      }
+    ],
+    "bull": [],
+    "bear": [
+      {
+        "date": "2026-02-03",
+        "idx": 1,
+        "bottom": 104,
+        "top": 108
+      }
+    ]
+  },
+  {
+    "name": "bearish body touches far edge and closes gap",
+    "candles": [
+      {
+        "date": "2026-02-02",
+        "open": 110,
+        "close": 108,
+        "high": 115,
+        "low": 100
+      },
+      {
+        "date": "2026-02-03",
+        "open": 102,
+        "close": 104,
+        "high": 115,
+        "low": 99
+      },
+      {
+        "date": "2026-02-04",
+        "open": 104,
+        "close": 108,
+        "high": 115,
+        "low": 98
+      }
+    ],
+    "bull": [],
+    "bear": []
+  },
+  {
+    "name": "equal adjacent body boundary is not a gap",
+    "candles": [
+      {
+        "date": "2026-02-02",
+        "open": 98,
+        "close": 100,
+        "high": 108,
+        "low": 95
+      },
+      {
+        "date": "2026-02-03",
+        "open": 100,
+        "close": 104,
+        "high": 110,
+        "low": 96
+      }
+    ],
+    "bull": [],
+    "bear": []
+  },
+  {
+    "name": "original minimum gap threshold remains",
+    "candles": [
+      {
+        "date": "2026-02-02",
+        "open": 99,
+        "close": 100,
+        "high": 101,
+        "low": 98
+      },
+      {
+        "date": "2026-02-03",
+        "open": 100.05,
+        "close": 101,
+        "high": 102,
+        "low": 99
+      }
+    ],
+    "bull": [],
+    "bear": []
+  }
+]

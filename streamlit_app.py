@@ -16,6 +16,7 @@ import streamlit.components.v1 as components
 import yfinance as yf
 
 from seven_line_ui import render_strategy_comparison
+from gap_logic import detect_body_gaps
 
 
 PAGE = Path(__file__).parent / "v0" / "gemini-code-1795528199482.html"
@@ -147,20 +148,7 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
                 "date": bar["date"],
                 "low": float(trigger["low"]),
             }
-    open_bull_gaps = []
-    open_bear_gaps = []
-    for i in range(1, len(frame)):
-        current, previous = frame.iloc[i], frame.iloc[i - 1]
-        if float(current["low"]) > float(previous["high"]) * 1.001 and not (
-            frame.iloc[i + 1:]["low"] <= float(previous["high"])
-        ).any():
-            open_bull_gaps.append({"date": current["date"], "idx": i,
-                                   "bottom": float(previous["high"]), "top": float(current["low"])})
-        if float(current["high"]) < float(previous["low"]) * 0.999 and not (
-            frame.iloc[i + 1:]["high"] >= float(previous["low"])
-        ).any():
-            open_bear_gaps.append({"date": current["date"], "idx": i,
-                                   "bottom": float(current["high"]), "top": float(previous["low"])})
+    open_bull_gaps, open_bear_gaps = detect_body_gaps(candles)
     frame["avg_volume_25"] = frame["volume"].rolling(25).mean()
     active_key_long_red = None
     for row in frame.iloc[24:].itertuples():
@@ -448,6 +436,7 @@ def build_ai_review_prompt(
 - 半年線／年線：120MA={fmt(summary['_六線'][120])} | 240MA={fmt(summary['_六線'][240])}；均線斜率：{slopes}
 - 量能狀態：今日成交量={int(candles[-1]['volume']):,}（5日均量={fmt(indicators['vol_ma5'], 0)}，量比={vol_ratio}）
 - 指標狀態：RSI(14)={fmt(indicators['rsi'])} | KD(9,3,3)（K={indicators['k']:.2f}, D={indicators['d']:.2f}） | MACD柱狀體={fmt(indicators['macd_hist'])}
+- 缺口口徑：以開盤／收盤的實體上下緣判定形成及完全封閉，影線不計。
 - 系統操作結論：{summary['操作結論']}
 - 系統建議持股水位：{summary['建議持股水位']}；保留現金：{summary['保留現金']}
 - 持續中的結構訊號：{summary['持續中狀態']}

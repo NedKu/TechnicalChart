@@ -88,8 +88,8 @@ render_strategy_comparison('0050.TW', history, lao)
     at.button[0].click().run(timeout=60)
     assert not at.exception
     assert len(at.table) == 3
-    assert at.session_state['strategy_comparison_result_0050.TW']['symbol'] == '0050.TW'
-    saved = at.session_state['strategy_comparison_result_0050.TW']
+    assert at.session_state['strategy_comparison_result_0050.TW_body-v1']['symbol'] == '0050.TW'
+    saved = at.session_state['strategy_comparison_result_0050.TW_body-v1']
     assert saved['capital'] == 200000
     assert saved['lao_result']['log_rows'][0] == [str(requested_start), str(requested_end), 200000]
     assert saved['lao_result']['curve'][0]['date'] == saved['result']['curve'][0]['date']

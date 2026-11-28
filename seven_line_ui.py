@@ -4,6 +4,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
+from gap_logic import GAP_RULE_VERSION
 from seven_line import BANDS, calculate_seven_lines, performance, run_position_backtest
 
 
@@ -30,7 +31,7 @@ def render_strategy_comparison(default_symbol, load_history, lao_wang_backtest):
         st.write("資料採 yfinance 還原權值日 K；累積報酬＝期末資產／起始資金−1；年化報酬依實際日數複利換算。")
         st.write("老王比較列沿用既有優先序：天量低點失守／假突破／四線或六線跌破→15%；三聲無奈→25%；跌破10MA但守20MA→30%；跌破5MA但守10MA→50%；六線偏多且短均線上彎或突破前高→85%；三陽開泰→75%或55%；其餘整理→40%。未封閉缺口屬狀態資訊，不直接改變該模型水位。")
         st.markdown("[原始算法來源](https://github.com/NedKu/STOCK_PER_PBR_Trend/blob/c1af2867db4573fca7ae136ce2f007fbee92a810/src/stock_per_pbr_trend/analysis.py)")
-    result_key = f"strategy_comparison_result_{default_symbol}"
+    result_key = f"strategy_comparison_result_{default_symbol}_{GAP_RULE_VERSION}"
     with st.form(f"strategy_comparison_form_{default_symbol}"):
         left, middle, right = st.columns(3)
         start = left.date_input("回測開始日", value=date.today() - timedelta(days=365))
