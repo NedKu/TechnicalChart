@@ -15,6 +15,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 
+from seven_line_ui import render_seven_line_backtest
+
 
 PAGE = Path(__file__).parent / "v0" / "gemini-code-1795528199482.html"
 MARKER = "const STREAMLIT_PAYLOAD = null;"
@@ -622,6 +624,8 @@ def main() -> None:
             mime="text/csv",
             help="包含逐日持股水位、加碼／減碼動作、策略判斷原因及每日報酬。",
         )
+
+    render_seven_line_backtest(raw_symbol, load_history, backtest_lao_wang)
 
     st.subheader("📋 觀察名單總覽")
     st.caption(f"依 {as_of_text} 當天及之前的日 K 計算；價格為還原權值資料。")
