@@ -52,6 +52,7 @@ def render_seven_line_backtest(default_symbol, load_history, lao_wang_backtest):
                 raise ValueError("請輸入有效股票代號。")
             with st.spinner("下載歷史資料、逐日重建七線並比較策略…"):
                 payload = load_history(symbol, "max")
+                discarded_rows = payload.get("discarded_rows", 0)
                 lines = _lines(payload["candles"])
                 result = run_position_backtest(lines, start, end, capital, weights)
                 lao = lao_wang_backtest(payload["candles"], start, end, capital)
@@ -67,7 +68,8 @@ def render_seven_line_backtest(default_symbol, load_history, lao_wang_backtest):
                                         for name, curve in [("七線", result["curve"]), ("老王", lao["curve"]), ("買入持有", benchmark)]})
                 st.session_state.seven_line_result = dict(symbol=payload["ticker"], result=result,
                     metrics=metrics, returns=returns, lines=selected, weights=weights,
-                    start=selected.index[0].date(), end=selected.index[-1].date(), capital=capital)
+                    start=selected.index[0].date(), end=selected.index[-1].date(), capital=capital,
+                    discarded_rows=discarded_rows)
         except (ValueError, OverflowError) as exc:
             st.error(str(exc))
     saved = st.session_state.get("seven_line_result")
@@ -75,6 +77,8 @@ def render_seven_line_backtest(default_symbol, load_history, lao_wang_backtest):
         st.info("選股票、日期及各位置水位，按「執行七線回測並比較」後顯示結果。")
         return
     st.write(f"已執行：{saved['symbol']}｜{saved['start']}–{saved['end']}｜起始資金 {saved['capital']:,.0f}")
+    if saved.get("discarded_rows", 0):
+        st.warning(f"行情來源有 {saved['discarded_rows']} 筆零、負數或無效價格日 K，已從下載歷史中排除；三套比較均使用相同有效資料。")
     st.write("本次規則：" + "、".join(f"位置{zone}={weight}%" for zone, weight in enumerate(saved["weights"])))
     st.caption("下方為上次成功執行的結果；修改表單後需重新執行。各策略使用相同日期、資金及行情。老王採現有引擎（首段使用起始日前訊號），七線逐段用前一收盤訊號。")
     st.table(saved["metrics"].style.format("{:,.2f}"))

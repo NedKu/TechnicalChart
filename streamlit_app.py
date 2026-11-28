@@ -65,17 +65,20 @@ def load_history(symbol: str, period: str = "1y") -> dict:
                 cutoff = pd.Timestamp.now(tz="UTC") - pd.DateOffset(years=int(period[:-1]))
                 frame = frame.loc[frame.index >= cutoff]
             candles = []
+            discarded_rows = 0
             for date, row in frame.iterrows():
                 values = [row[col] for col in ("Open", "High", "Low", "Close", "Volume")]
-                if not all(math.isfinite(float(value)) for value in values):
+                if (not all(math.isfinite(float(value)) for value in values)
+                        or any(float(value) <= 0 for value in values[:4])):
+                    discarded_rows += 1
                     continue
                 candles.append(
                     {
                         "date": date.strftime("%Y-%m-%d"),
-                        "open": round(float(row["Open"]), 2),
-                        "high": round(float(row["High"]), 2),
-                        "low": round(float(row["Low"]), 2),
-                        "close": round(float(row["Close"]), 2),
+                        "open": float(row["Open"]),
+                        "high": float(row["High"]),
+                        "low": float(row["Low"]),
+                        "close": float(row["Close"]),
                         "volume": max(0, int(row["Volume"])),
                     }
                 )
@@ -85,6 +88,7 @@ def load_history(symbol: str, period: str = "1y") -> dict:
                     "ticker": ticker,
                     "name": WATCHLIST.get(symbol, ticker),
                     "candles": candles,
+                    "discarded_rows": discarded_rows,
                 }
             errors.append(f"{ticker}: 可用日 K 不足 30 筆")
         except Exception as exc:
@@ -97,6 +101,10 @@ def summarize_lao_wang(candles: list[dict]) -> dict:
     import pandas as pd
 
     frame = pd.DataFrame(candles)
+    prices = frame[["open", "high", "low", "close"]]
+    if not prices.apply(lambda column: column.map(
+            lambda value: math.isfinite(float(value)) and float(value) > 0)).all().all():
+        raise ValueError("日 K 包含零、負數或無效價格，請重新載入行情後回測。")
     for period in (5, 10, 20, 60, 120, 240):
         frame[f"ma{period}"] = frame["close"].rolling(period).mean()
     last = frame.iloc[-1]
@@ -531,6 +539,8 @@ def main() -> None:
         st.info("請確認代號與網路連線後重試；不會使用模擬價格。")
         return
 
+    if payload.get("discarded_rows", 0):
+        st.caption(f"已排除 {payload['discarded_rows']} 筆無效價格日 K；分析與回測使用其餘有效行情。")
     first_day = date.fromisoformat(payload["candles"][0]["date"])
     last_day = date.fromisoformat(payload["candles"][-1]["date"])
     as_of = st.sidebar.date_input(
