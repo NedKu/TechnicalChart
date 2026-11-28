@@ -41,3 +41,37 @@ test('short available history never invents candles for 5Y', () => {
   const ctx = context();
   assert.equal(vm.runInContext("selectChartCandles([{date:'2026-10-01'}, {date:'2026-11-27'}], '5y').length",ctx), 2);
 });
+test('slider shifts a calendar window without including later candles', () => {
+  const ctx = context();
+  vm.runInContext(`var history = Array.from({length: 800}, (_, i) => ({date: new Date(Date.UTC(2022, 0, i+1)).toISOString().slice(0,10)}));`, ctx);
+  const earlyEnd = vm.runInContext('history[400].date',ctx);
+  assert.equal(vm.runInContext("selectChartCandles(history, '1m', 400).at(-1).date", ctx), earlyEnd);
+  assert.ok(vm.runInContext("selectChartCandles(history, '1m', 400).every(bar => bar.date <= history[400].date)", ctx));
+  assert.ok(vm.runInContext("selectChartCandles(history, '3m', 400).length > selectChartCandles(history, '1m', 400).length", ctx));
+  assert.equal(vm.runInContext("chartWindowMinimum(history, '1m')", ctx), 31);
+});
+test('pan state can return to latest and does not change strategy state', () => {
+  const ctx = context();
+  vm.runInContext(`
+    chartCandles = Array.from({length: 800}, (_, i) => ({date: new Date(Date.UTC(2022, 0, i+1)).toISOString().slice(0,10)}));
+    currentCandles = chartCandles.slice(-252);
+    currentAnalysis = {symbol:'TEST'};
+    drawKlineChart = () => {};
+    setChartWindow(400);
+  `,ctx);
+  assert.equal(vm.runInContext('chartWindowEndIndex',ctx),400);
+  assert.equal(vm.runInContext('currentRange',ctx),'1y');
+  vm.runInContext("setChartWindow('latest')",ctx);
+  assert.equal(vm.runInContext('chartWindowEndIndex',ctx),null);
+});
+test('historical overlays use no prices after selected endpoint', () => {
+  const ctx = context();
+  vm.runInContext(`var bars = [
+    {date:'2026-01-01', open:99,close:100,high:101,low:98,volume:100},
+    {date:'2026-01-02', open:105,close:106,high:107,low:104,volume:100},
+    {date:'2026-01-05', open:102,close:100,high:103,low:99,volume:100}
+  ];`,ctx);
+  assert.equal(vm.runInContext('historicalChartInfo(bars.slice(0,2)).openBullGaps.length',ctx),1);
+  assert.equal(vm.runInContext('historicalChartInfo(bars).openBullGaps.length',ctx),0);
+  assert.equal(vm.runInContext('historicalChartInfo(bars.slice(0,2)).last.date',ctx),'2026-01-02');
+});

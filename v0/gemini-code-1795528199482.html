@@ -24,6 +24,11 @@
       border: 1px solid rgba(51, 65, 85, 0.7);
       backdrop-filter: blur(8px);
     }
+    .chart-timeline { margin: 12px 0; padding: 10px; border: 1px solid #334155; border-radius: 8px; }
+    .chart-timeline input { width: 100%; min-height: 44px; accent-color: #38bdf8; cursor: ew-resize; }
+    .chart-timeline-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
+    .chart-timeline button { padding: 6px 10px; min-height: 36px; border: 1px solid #475569; border-radius: 6px; background: #0f172a; color: #f1f5f9; cursor: pointer; }
+    .chart-timeline button:disabled { opacity: 0.45; cursor: default; }
     .chart-range-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
     [data-chart-range] {
       min-width: 44px; min-height: 36px; padding: 6px 12px;
@@ -262,6 +267,15 @@
           <canvas id="klineCanvas" class="w-full h-full block"></canvas>
           <div id="chartTooltip" class="hidden absolute pointer-events-none bg-slate-900/95 border border-slate-700 rounded-lg p-2.5 text-xs shadow-xl z-10 font-mono-num"></div>
         </div>
+        <div class="chart-timeline">
+          <div class="chart-timeline-header">
+            <label for="chartTimeSlider">↔ 拖曳查看歷史區間</label>
+            <output id="chartTimeLabel" for="chartTimeSlider" aria-live="polite"></output>
+            <button id="chartLatestButton" type="button" onclick="setChartWindow('latest')">回到最新</button>
+          </div>
+          <input id="chartTimeSlider" type="range" min="0" max="0" value="0" step="1" disabled
+            aria-label="圖表區間結束交易日" oninput="setChartWindow(this.value)" />
+        </div>
         <div class="mt-3 rounded-xl border border-slate-800 bg-slate-950 p-2">
           <div id="indicatorReadings" class="grid grid-cols-1 sm:grid-cols-3 gap-2 px-1 pt-1"></div>
           <canvas id="indicatorCanvas" class="w-full h-[360px] block"></canvas>
@@ -434,6 +448,7 @@
     let currentRange = STREAMLIT_PAYLOAD?.range || '1y';
     let currentCandles = [];
     let chartCandles = [];
+    let chartWindowEndIndex = null;
     let chartRange = ['1m', '3m', '6m', '1y', '3y', '5y'].includes(currentRange) ? currentRange : '1y';
     let currentAnalysis = null;
     let localServerAvailable = false;
@@ -897,6 +912,7 @@ if __name__ == '__main__':
 
     function processCandlesData(fullCandles, symbol, name) {
       const enriched = enrichCandles(fullCandles);
+      chartWindowEndIndex = null;
       chartCandles = STREAMLIT_PAYLOAD?.chart_candles?.length
         ? enrichCandles(STREAMLIT_PAYLOAD.chart_candles) : enriched;
       const daysLimit = { '1m': 21, '3m': 63, '6m': 126, '1y': 252, '2y': 504, '3y': 756, '5y': 1260, '20y': 5040, '30y': 7560 }[currentRange] || 252;
@@ -1242,10 +1258,49 @@ if __name__ == '__main__':
       return start.toISOString().slice(0, 10);
     }
 
-    function selectChartCandles(candles, range) {
+    function selectChartCandles(candles, range, endIndex = candles.length - 1) {
       if (!candles.length) return [];
-      const start = chartRangeStart(candles[candles.length - 1].date, range);
-      return candles.filter(bar => bar.date >= start);
+      const end = candles[Math.max(0, Math.min(candles.length - 1, endIndex))].date;
+      const start = chartRangeStart(end, range);
+      return candles.filter(bar => bar.date >= start && bar.date <= end);
+    }
+
+    function chartWindowMinimum(candles, range) {
+      const first = candles[0].date;
+      const index = candles.findIndex(bar => chartRangeStart(bar.date, range) >= first);
+      return index < 0 ? candles.length - 1 : index;
+    }
+
+    function setChartWindow(value) {
+      const candles = chartCandles.length ? chartCandles : currentCandles;
+      if (!candles.length || !currentAnalysis) return;
+      const minimum = chartWindowMinimum(candles, chartRange);
+      chartWindowEndIndex = value === 'latest' ? null
+        : Math.max(minimum, Math.min(candles.length - 1, Number(value)));
+      drawKlineChart(candles, currentAnalysis);
+    }
+
+    function historicalChartInfo(candles) {
+      const openBullGaps = [], openBearGaps = [];
+      let futureLow = Infinity, futureHigh = -Infinity;
+      for (let i = candles.length - 1; i >= 1; i--) {
+        const cur = candles[i], prev = candles[i - 1];
+        if (cur.low > prev.high * 1.001 && futureLow > prev.high) {
+          openBullGaps.push({date: cur.date, top: cur.low, bottom: prev.high});
+        }
+        if (cur.high < prev.low * 0.999 && futureHigh < prev.low) {
+          openBearGaps.push({date: cur.date, top: prev.low, bottom: cur.high});
+        }
+        futureLow = Math.min(futureLow, cur.low);
+        futureHigh = Math.max(futureHigh, cur.high);
+      }
+      const recent20 = candles.slice(-20);
+      const maxVolBar = recent20.reduce((max, bar) => bar.volume > max.volume ? bar : max);
+      const recent25 = candles.slice(-25);
+      const avg = recent25.reduce((sum, bar) => sum + bar.volume, 0) / recent25.length;
+      const keyLongRed = recent25.slice().reverse().find(bar => bar.open > 0
+        && (bar.close - bar.open) / bar.open >= 0.025 && bar.volume >= avg * 1.2) || null;
+      return {openBullGaps, openBearGaps, maxVolBar, keyLongRed, last: candles[candles.length - 1]};
     }
 
     function updateChartRangeControls(data, allCandles) {
@@ -1257,11 +1312,21 @@ if __name__ == '__main__':
           : 'px-3 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 hover:text-white';
       });
       document.getElementById('chartRangeLabel').textContent = `(${data[0].date} ~ ${data[data.length - 1].date}，${data.length} 個交易日)`;
-      const start = chartRangeStart(allCandles[allCandles.length - 1].date, chartRange);
+      const slider = document.getElementById('chartTimeSlider');
+      const minimum = chartWindowMinimum(allCandles, chartRange);
+      const endIndex = chartWindowEndIndex ?? allCandles.length - 1;
+      slider.min = minimum;
+      slider.max = allCandles.length - 1;
+      slider.value = endIndex;
+      slider.disabled = minimum >= allCandles.length - 1;
+      slider.setAttribute('aria-valuetext', data[data.length - 1].date);
+      document.getElementById('chartTimeLabel').textContent = `${data[0].date} ～ ${data[data.length - 1].date}`;
+      document.getElementById('chartLatestButton').disabled = endIndex === allCandles.length - 1;
+      const start = chartRangeStart(data[data.length - 1].date, chartRange);
       const gapDays = (new Date(`${allCandles[0].date}T00:00:00Z`) - new Date(`${start}T00:00:00Z`)) / 86400000;
       document.getElementById('chartRangeNote').textContent = gapDays > 7
         ? `目前可用資料始於 ${allCandles[0].date}，不足 ${chartRange.toUpperCase()}，已顯示全部可用行情。`
-        : '期間以圖中最後交易日為終點；切換僅調整 K 線、均線與下方技術指標的顯示範圍。';
+        : '可用下方拉條移動歷史區間；K 線、均線、缺口與技術指標依選定區間顯示。';
     }
 
     function setChartRange(range) {
@@ -1293,7 +1358,15 @@ if __name__ == '__main__':
       ctx.clearRect(0, 0, width, height);
 
       if (!allCandles.length) return;
-      const data = selectChartCandles(allCandles, chartRange);
+      const minimum = chartWindowMinimum(allCandles, chartRange);
+      if (chartWindowEndIndex !== null) {
+        chartWindowEndIndex = Math.max(minimum, Math.min(allCandles.length - 1, chartWindowEndIndex));
+      }
+      const endIndex = chartWindowEndIndex ?? allCandles.length - 1;
+      const data = selectChartCandles(allCandles, chartRange, endIndex);
+      if (data[data.length - 1].date !== info.last.date) {
+        info = historicalChartInfo(allCandles.slice(0, endIndex + 1));
+      }
       updateChartRangeControls(data, allCandles);
 
       const pad = { top: 20, right: 65, bottom: 26, left: 15 };
