@@ -24,6 +24,15 @@
       border: 1px solid rgba(51, 65, 85, 0.7);
       backdrop-filter: blur(8px);
     }
+    .chart-range-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+    [data-chart-range] {
+      min-width: 44px; min-height: 36px; padding: 6px 12px;
+      border: 1px solid #334155; border-radius: 8px;
+      background: #0f172a; color: #cbd5e1; font-size: 12px; cursor: pointer;
+    }
+    [data-chart-range][aria-pressed="true"] { border-color: #38bdf8; background: #0284c7; color: white; font-weight: 700; }
+    [data-chart-range]:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+    @media (max-width: 640px) { [data-chart-range] { min-height: 44px; } }
   </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -239,6 +248,16 @@
           </div>
         </div>
 
+        <div class="chart-range-controls flex flex-wrap items-center gap-2 mb-2" role="group" aria-label="K 線圖顯示期間">
+          <span class="text-xs text-slate-400">🔍 圖表期間</span>
+          <button type="button" data-chart-range="1m" onclick="setChartRange('1m')" aria-pressed="false" class="px-3 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 hover:text-white">1M</button>
+          <button type="button" data-chart-range="3m" onclick="setChartRange('3m')" aria-pressed="false" class="px-3 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 hover:text-white">3M</button>
+          <button type="button" data-chart-range="6m" onclick="setChartRange('6m')" aria-pressed="false" class="px-3 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 hover:text-white">6M</button>
+          <button type="button" data-chart-range="1y" onclick="setChartRange('1y')" aria-pressed="false" class="px-3 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 hover:text-white">1Y</button>
+          <button type="button" data-chart-range="3y" onclick="setChartRange('3y')" aria-pressed="false" class="px-3 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 hover:text-white">3Y</button>
+          <button type="button" data-chart-range="5y" onclick="setChartRange('5y')" aria-pressed="false" class="px-3 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 hover:text-white">5Y</button>
+        </div>
+        <p id="chartRangeNote" class="text-xs text-slate-400 mb-2" aria-live="polite"></p>
         <div class="relative w-full h-[380px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
           <canvas id="klineCanvas" class="w-full h-full block"></canvas>
           <div id="chartTooltip" class="hidden absolute pointer-events-none bg-slate-900/95 border border-slate-700 rounded-lg p-2.5 text-xs shadow-xl z-10 font-mono-num"></div>
@@ -414,6 +433,8 @@
     let currentSymbol = '2330';
     let currentRange = STREAMLIT_PAYLOAD?.range || '1y';
     let currentCandles = [];
+    let chartCandles = [];
+    let chartRange = ['1m', '3m', '6m', '1y', '3y', '5y'].includes(currentRange) ? currentRange : '1y';
     let currentAnalysis = null;
     let localServerAvailable = false;
 
@@ -457,7 +478,7 @@
         }
       });
       if (tabName === 'dashboard' && currentCandles.length) {
-        setTimeout(() => drawKlineChart(currentCandles, currentAnalysis), 50);
+        setTimeout(() => drawKlineChart(chartCandles.length ? chartCandles : currentCandles, currentAnalysis), 50);
       }
     }
 
@@ -841,7 +862,7 @@ if __name__ == '__main__':
       return { macd, signal, histogram: macd.map((v, i) => v == null || signal[i] == null ? null : v - signal[i]) };
     }
 
-    function processCandlesData(fullCandles, symbol, name) {
+    function enrichCandles(fullCandles) {
       // 計算完整 5 年均線後，依選擇年份裁切顯示區間
       const ma5 = calcSMA(fullCandles, 5);
       const ma10 = calcSMA(fullCandles, 10);
@@ -871,6 +892,13 @@ if __name__ == '__main__':
         bias10: ma10[i] ? +(((c.close - ma10[i]) / ma10[i]) * 100).toFixed(2) : null
       }));
 
+      return enriched;
+    }
+
+    function processCandlesData(fullCandles, symbol, name) {
+      const enriched = enrichCandles(fullCandles);
+      chartCandles = STREAMLIT_PAYLOAD?.chart_candles?.length
+        ? enrichCandles(STREAMLIT_PAYLOAD.chart_candles) : enriched;
       const daysLimit = { '1m': 21, '3m': 63, '6m': 126, '1y': 252, '2y': 504, '3y': 756, '5y': 1260, '20y': 5040, '30y': 7560 }[currentRange] || 252;
       currentCandles = enriched.slice(-daysLimit);
       runLaoWangDiagnostic(currentCandles, symbol, name);
@@ -1200,15 +1228,54 @@ if __name__ == '__main__':
       currentAnalysis = {
         symbol, name, last, openBullGaps, openBearGaps, maxVolBar, keyLongRed, high60, low60
       };
-      document.getElementById('chartRangeLabel').textContent = `(${candles[0].date} ~ ${last.date}，顯示近 ${Math.min(candles.length, 160)} 交易日)`;
-      drawKlineChart(candles, currentAnalysis);
+      drawKlineChart(chartCandles.length ? chartCandles : candles, currentAnalysis);
     }
 
     // ==================== 3. 原生高解析度互動 K 線圖表 ====================
+    function chartRangeStart(lastDate, range) {
+      const months = { '1m': 1, '3m': 3, '6m': 6, '1y': 12, '3y': 36, '5y': 60 }[range];
+      if (!months) throw new Error('Unknown chart range');
+      const end = new Date(`${lastDate}T00:00:00Z`);
+      const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - months, 1));
+      const lastDay = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
+      start.setUTCDate(Math.min(end.getUTCDate(), lastDay));
+      return start.toISOString().slice(0, 10);
+    }
+
+    function selectChartCandles(candles, range) {
+      if (!candles.length) return [];
+      const start = chartRangeStart(candles[candles.length - 1].date, range);
+      return candles.filter(bar => bar.date >= start);
+    }
+
+    function updateChartRangeControls(data, allCandles) {
+      document.querySelectorAll('[data-chart-range]').forEach(button => {
+        const active = button.dataset.chartRange === chartRange;
+        button.setAttribute('aria-pressed', String(active));
+        button.className = active
+          ? 'px-3 py-1 rounded-lg border border-sky-400 bg-sky-600 text-xs text-white font-bold'
+          : 'px-3 py-1 rounded-lg border border-slate-700 text-xs text-slate-300 hover:text-white';
+      });
+      document.getElementById('chartRangeLabel').textContent = `(${data[0].date} ~ ${data[data.length - 1].date}，${data.length} 個交易日)`;
+      const start = chartRangeStart(allCandles[allCandles.length - 1].date, chartRange);
+      const gapDays = (new Date(`${allCandles[0].date}T00:00:00Z`) - new Date(`${start}T00:00:00Z`)) / 86400000;
+      document.getElementById('chartRangeNote').textContent = gapDays > 7
+        ? `目前可用資料始於 ${allCandles[0].date}，不足 ${chartRange.toUpperCase()}，已顯示全部可用行情。`
+        : '期間以圖中最後交易日為終點；切換僅調整 K 線、均線與下方技術指標的顯示範圍。';
+    }
+
+    function setChartRange(range) {
+      if (!['1m', '3m', '6m', '1y', '3y', '5y'].includes(range)) return;
+      chartRange = range;
+      if (currentAnalysis && (chartCandles.length || currentCandles.length)) {
+        drawKlineChart(chartCandles.length ? chartCandles : currentCandles, currentAnalysis);
+      }
+    }
+
     function toggleMALayer(key) {
       maLayers[key] = !maLayers[key];
       if (currentCandles.length && currentAnalysis) {
-        drawKlineChart(currentCandles, currentAnalysis);
+        drawKlineChart(chartCandles.length ? chartCandles : currentCandles, currentAnalysis);
       }
     }
 
@@ -1225,10 +1292,9 @@ if __name__ == '__main__':
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, width, height);
 
-      // 依年份選擇顯示根數 (1Y最多顯示150根，2Y~5Y依比例取樣或顯示最近220根確保K線清晰)
-      const viewCount = { '1m': 21, '3m': 63, '6m': 126, '1y': 252, '2y': 504, '3y': 756, '5y': 1260, '20y': 5040, '30y': 7560 }[currentRange] || 252;
-      const data = allCandles.slice(-viewCount);
-      const startIdxOffset = allCandles.length - data.length;
+      if (!allCandles.length) return;
+      const data = selectChartCandles(allCandles, chartRange);
+      updateChartRangeControls(data, allCandles);
 
       const pad = { top: 20, right: 65, bottom: 26, left: 15 };
       const chartW = width - pad.left - pad.right;
@@ -1265,8 +1331,8 @@ if __name__ == '__main__':
 
       // 繪製未封閉多方缺口 (綠色半透明帶)
       info.openBullGaps.forEach(gap => {
-        const localIdx = Math.max(0, gap.idx - startIdxOffset);
-        if (localIdx < data.length) {
+        const localIdx = data.findIndex(bar => bar.date >= gap.date);
+        if (localIdx >= 0 && localIdx < data.length) {
           ctx.fillStyle = 'rgba(16, 185, 129, 0.16)';
           const y1 = yPrice(gap.top), y2 = yPrice(gap.bottom);
           ctx.fillRect(xCenter(localIdx), y1, width - pad.right - xCenter(localIdx), Math.max(2, y2 - y1));
@@ -1275,8 +1341,8 @@ if __name__ == '__main__':
 
       // 繪製未封閉空方缺口 (紅色半透明帶)
       info.openBearGaps.forEach(gap => {
-        const localIdx = Math.max(0, gap.idx - startIdxOffset);
-        if (localIdx < data.length) {
+        const localIdx = data.findIndex(bar => bar.date >= gap.date);
+        if (localIdx >= 0 && localIdx < data.length) {
           ctx.fillStyle = 'rgba(244, 63, 94, 0.18)';
           const y1 = yPrice(gap.top), y2 = yPrice(gap.bottom);
           ctx.fillRect(xCenter(localIdx), y1, width - pad.right - xCenter(localIdx), Math.max(2, y2 - y1));

@@ -37,3 +37,7 @@ python -m streamlit run streamlit_app.py
 舊App的線值使用下載當時的歷史資料；早期不足182週時原App採縮短視窗，本回測則拒絕不足暖機的期間。
 
 七線測試（開發環境需另外安裝pytest）：`python -m pytest -q tests/test_seven_line.py`。
+
+K線圖下方提供1M／3M／6M／1Y／3Y／5Y按鈕，以圖中最後交易日為終點切換日曆區間。
+只改變圖表與技術指標顯示，不改動診斷或回測區段。短期行情設定會另外補取五年圖表資料；
+歷史不足或下載失敗時顯示現有資料並提示。圖表日期邊界測試：`node --test tests/test_chart_ranges.cjs`。

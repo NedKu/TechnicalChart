@@ -575,6 +575,15 @@ def main() -> None:
         return
     # Escape closing tags and HTML specials before embedding JSON in a script.
     payload["range"] = {"1mo":"1m", "3mo":"3m", "6mo":"6m"}.get(data_period, data_period)
+    payload["chart_candles"] = historical_candles
+    if data_period in {"1mo", "3mo", "6mo", "1y", "2y", "3y"}:
+        try:
+            chart_history = load_history(raw_symbol, "5y")
+            chart_by_date = {bar["date"]: bar for bar in chart_history["candles"] if bar["date"] <= as_of_text}
+            chart_by_date.update({bar["date"]: bar for bar in historical_candles})
+            payload["chart_candles"] = [chart_by_date[day] for day in sorted(chart_by_date)]
+        except ValueError:
+            st.caption("五年圖表行情暫時無法取得，圖表先使用目前已載入資料。")
     data = json.dumps(payload, ensure_ascii=True).replace("<", "\\u003c")
     html = html.replace(MARKER, f"const STREAMLIT_PAYLOAD = {data};", 1)
     prompt_data = json.dumps(review_prompt, ensure_ascii=True).replace("<", "\\u003c")
