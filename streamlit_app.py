@@ -7,7 +7,7 @@ import math
 import re
 import csv
 import io
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -15,7 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 
-from seven_line_ui import render_seven_line_backtest
+from seven_line_ui import render_strategy_comparison
 
 
 PAGE = Path(__file__).parent / "v0" / "gemini-code-1795528199482.html"
@@ -581,61 +581,7 @@ def main() -> None:
     html = html.replace(PROMPT_MARKER, f"const STREAMLIT_REVIEW_PROMPT = {prompt_data};", 1)
     components.html(html, height=1300, scrolling=True)
 
-    st.subheader("📈 老王戰法歷史回測")
-    st.caption("選好日期和起始資金後按「開始回測」。結果會保留在頁面上；收盤訊號從下一交易日生效，未計手續費、稅費、滑價與股息稅。")
-    backtest_min = date.fromisoformat(payload["candles"][min(30, len(payload["candles"]) - 1)]["date"])
-    backtest_result_key = f"backtest_result_{raw_symbol}_{data_period}"
-    with st.form(f"backtest_form_{raw_symbol}_{data_period}"):
-        range_col1, range_col2, capital_col = st.columns(3)
-        backtest_start = range_col1.date_input("回測開始日", value=max(backtest_min, last_day - timedelta(days=365)),
-                                               min_value=backtest_min, max_value=last_day)
-        backtest_end = range_col2.date_input("回測結束日", value=last_day, min_value=backtest_min, max_value=last_day)
-        capital = capital_col.number_input("起始資金", min_value=1_000, value=100_000, step=10_000)
-        run_backtest = st.form_submit_button("開始回測", type="primary")
-    if run_backtest:
-        if backtest_start > backtest_end:
-            st.warning("回測開始日必須早於或等於結束日。")
-        else:
-            try:
-                st.session_state[backtest_result_key] = {
-                    "result": backtest_lao_wang(payload["candles"], backtest_start, backtest_end, capital),
-                    "start": backtest_start,
-                    "end": backtest_end,
-                    "capital": capital,
-                }
-            except ValueError as exc:
-                st.info(str(exc))
-    saved_backtest = st.session_state.get(backtest_result_key)
-    if saved_backtest:
-        result = saved_backtest["result"]
-        metric1, metric2, metric3, metric4 = st.columns(4)
-        metric1.metric("期末資產", f"{result['final_value']:,.0f}")
-        metric2.metric("區間報酬", f"{result['total_return']:+.2%}")
-        metric3.metric("年均複合報酬", f"{result['annualized_return']:+.2%}")
-        metric4.metric("最大回撤", f"{result['max_drawdown']:.2%}")
-        st.caption(f"回測期間 {saved_backtest['start']} 至 {saved_backtest['end']}；起始資金 {saved_backtest['capital']:,.0f}；共計 {result['sessions']} 個交易日報酬。")
-        st.line_chart({"策略資產": {point["date"]: point["value"] for point in result["curve"]}}, x_label="日期", y_label="資產")
-        with st.expander("📋 查看逐日買賣與持股水位紀錄（點此展開）", expanded=False):
-            import pandas as pd
-
-            log_frame = pd.DataFrame(result["log_rows"], columns=result["log_columns"])
-            log_style = log_frame.style.set_properties(
-                subset=["配置動作", "老王戰法操作結論", "持續中訊號（含未封閉缺口）"],
-                **{"white-space": "normal", "overflow-wrap": "anywhere", "word-break": "break-word", "vertical-align": "top"},
-            ).set_table_styles([
-                {"selector": "table", "props": [("table-layout", "fixed"), ("width", "100%")]},
-                {"selector": "th", "props": [("white-space", "normal"), ("overflow-wrap", "anywhere")]},
-            ]).hide(axis="index")
-            st.table(log_style)
-        st.download_button(
-            "下載回測操作紀錄（CSV）",
-            data=result["log_csv"],
-            file_name=f"laowang_backtest_{symbol}_{saved_backtest['start']}_{saved_backtest['end']}.csv",
-            mime="text/csv",
-            help="包含逐日持股水位、加碼／減碼動作、策略判斷原因及每日報酬。",
-        )
-
-    render_seven_line_backtest(raw_symbol, load_history, backtest_lao_wang)
+    render_strategy_comparison(raw_symbol, load_history, backtest_lao_wang)
 
     st.subheader("📋 觀察名單總覽")
     st.caption(f"依 {as_of_text} 當天及之前的日 K 計算；價格為還原權值資料。")

@@ -60,7 +60,7 @@ def test_seven_line_form_submits_and_keeps_results(tmp_path):
 from datetime import date, timedelta
 import numpy as np
 import pandas as pd
-from seven_line_ui import render_seven_line_backtest
+from seven_line_ui import render_strategy_comparison
 
 def history(symbol, period):
     days = pd.bdate_range(end=date.today(), periods=1400)
@@ -69,16 +69,33 @@ def history(symbol, period):
 
 def lao(candles, start, end, capital):
     curve = [{'date': c['date'], 'value': capital} for c in candles if str(start) <= c['date'] <= str(end)]
-    return {'curve': curve}
+    return {'curve': curve, 'log_rows': [[str(start), str(end), capital]], 'log_columns': ['start', 'end', 'capital'], 'log_csv': 'start,end,capital'}
 
-render_seven_line_backtest('0050.TW', history, lao)
+render_strategy_comparison('0050.TW', history, lao)
 ''')
     at = AppTest.from_file(str(app)).run()
     assert not at.exception
+    assert len(at.date_input) == 2
+    assert len(at.button) == 1
+    assert at.date_input[0].label == '回測開始日'
+    assert at.date_input[1].label == '回測結束日'
+    from datetime import date, timedelta
+    requested_start = date.today() - timedelta(days=180)
+    requested_end = date.today() - timedelta(days=5)
+    at.date_input[0].set_value(requested_start)
+    at.date_input[1].set_value(requested_end)
+    next(widget for widget in at.number_input if widget.label == '共同起始資金').set_value(200000)
     at.button[0].click().run(timeout=60)
     assert not at.exception
-    assert len(at.table) == 2
-    assert at.session_state['seven_line_result']['symbol'] == '0050.TW'
+    assert len(at.table) == 3
+    assert at.session_state['strategy_comparison_result_0050.TW']['symbol'] == '0050.TW'
+    saved = at.session_state['strategy_comparison_result_0050.TW']
+    assert saved['capital'] == 200000
+    assert saved['lao_result']['log_rows'][0] == [str(requested_start), str(requested_end), 200000]
+    assert saved['lao_result']['curve'][0]['date'] == saved['result']['curve'][0]['date']
+    assert saved['lao_result']['curve'][-1]['date'] == saved['result']['curve'][-1]['date']
+    assert saved['lao_result']['curve'][0]['value'] == saved['result']['curve'][0]['value']
+    assert saved['metrics'].shape[0] == 3
     at.run(timeout=60)
     assert not at.exception
-    assert len(at.table) == 2
+    assert len(at.table) == 3

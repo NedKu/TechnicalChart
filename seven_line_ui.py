@@ -1,6 +1,5 @@
 """Independent seven-line research and comparison controls."""
 from datetime import date, timedelta
-import re
 
 import pandas as pd
 import streamlit as st
@@ -13,8 +12,9 @@ def _lines(candles):
     return calculate_seven_lines(candles)
 
 
-def render_seven_line_backtest(default_symbol, load_history, lao_wang_backtest):
-    st.subheader("📊 七線標準差位置回測與比較")
+def render_strategy_comparison(default_symbol, load_history, lao_wang_backtest):
+    st.subheader("📊 老王與七線策略回測比較")
+    st.write(f"回測標的：{default_symbol}（與側邊欄選擇相同）")
     st.caption("沿用 Stock PER/PBR Trend 的 182 週回歸與偏差分位線。3.5Y regression 是回歸預測線；882 日均線另外顯示。")
     with st.expander("計算方式與回測判斷標準"):
         st.markdown(
@@ -30,12 +30,12 @@ def render_seven_line_backtest(default_symbol, load_history, lao_wang_backtest):
         st.write("資料採 yfinance 還原權值日 K；累積報酬＝期末資產／起始資金−1；年化報酬依實際日數複利換算。")
         st.write("老王比較列沿用既有優先序：天量低點失守／假突破／四線或六線跌破→15%；三聲無奈→25%；跌破10MA但守20MA→30%；跌破5MA但守10MA→50%；六線偏多且短均線上彎或突破前高→85%；三陽開泰→75%或55%；其餘整理→40%。未封閉缺口屬狀態資訊，不直接改變該模型水位。")
         st.markdown("[原始算法來源](https://github.com/NedKu/STOCK_PER_PBR_Trend/blob/c1af2867db4573fca7ae136ce2f007fbee92a810/src/stock_per_pbr_trend/analysis.py)")
-    with st.form("seven_line_form"):
+    result_key = f"strategy_comparison_result_{default_symbol}"
+    with st.form(f"strategy_comparison_form_{default_symbol}"):
         left, middle, right = st.columns(3)
-        symbol = left.text_input("七線回測股票代號", value=default_symbol).strip().upper()
-        start = middle.date_input("七線開始日", value=date.today() - timedelta(days=365))
-        end = right.date_input("七線結束日", value=date.today(), max_value=date.today())
-        capital = st.number_input("七線起始資金", min_value=1000, value=100000, step=10000)
+        start = left.date_input("回測開始日", value=date.today() - timedelta(days=365))
+        end = middle.date_input("回測結束日", value=date.today(), max_value=date.today())
+        capital = right.number_input("共同起始資金", min_value=1000, value=100000, step=10000)
         st.write("各位置目標持股比例（%）：以下為可修改的研究範例，並非排程已確認的 CI 四批規則。")
         defaults = [100, 90, 80, 60, 40, 20, 10, 0]
         weights = []
@@ -43,15 +43,13 @@ def render_seven_line_backtest(default_symbol, load_history, lao_wang_backtest):
         for zone, default in enumerate(defaults):
             weights.append(cols[zone % 4].number_input(f"位置 {zone} 持股%", min_value=0, max_value=100,
                                                        value=default, step=5))
-        run = st.form_submit_button("執行七線回測並比較", type="primary")
+        run = st.form_submit_button("同時回測老王與七線", type="primary")
     if run:
         try:
             if start >= end:
                 raise ValueError("開始日需早於結束日。")
-            if not re.fullmatch(r"[A-Z0-9^.-]{1,20}", symbol):
-                raise ValueError("請輸入有效股票代號。")
             with st.spinner("下載歷史資料、逐日重建七線並比較策略…"):
-                payload = load_history(symbol, "max")
+                payload = load_history(default_symbol, "max")
                 discarded_rows = payload.get("discarded_rows", 0)
                 lines = _lines(payload["candles"])
                 result = run_position_backtest(lines, start, end, capital, weights)
@@ -66,15 +64,15 @@ def render_seven_line_backtest(default_symbol, load_history, lao_wang_backtest):
                 ]).set_index("策略")
                 returns = pd.DataFrame({name: pd.Series({p["date"]: (p["value"] / capital - 1) * 100 for p in curve})
                                         for name, curve in [("七線", result["curve"]), ("老王", lao["curve"]), ("買入持有", benchmark)]})
-                st.session_state.seven_line_result = dict(symbol=payload["ticker"], result=result,
+                st.session_state[result_key] = dict(lao_result=lao, symbol=payload["ticker"], result=result,
                     metrics=metrics, returns=returns, lines=selected, weights=weights,
                     start=selected.index[0].date(), end=selected.index[-1].date(), capital=capital,
                     discarded_rows=discarded_rows)
         except (ValueError, OverflowError) as exc:
             st.error(str(exc))
-    saved = st.session_state.get("seven_line_result")
+    saved = st.session_state.get(result_key)
     if not saved:
-        st.info("選股票、日期及各位置水位，按「執行七線回測並比較」後顯示結果。")
+        st.info("兩套策略共用此日期區段及起始資金，按「同時回測老王與七線」後顯示比較結果與各自紀錄。")
         return
     st.write(f"已執行：{saved['symbol']}｜{saved['start']}–{saved['end']}｜起始資金 {saved['capital']:,.0f}")
     if saved.get("discarded_rows", 0):
@@ -93,3 +91,10 @@ def render_seven_line_backtest(default_symbol, load_history, lao_wang_backtest):
         st.table(log.style.format(precision=3).set_properties(**{"white-space": "normal", "overflow-wrap": "anywhere"}))
     st.download_button("下載七線回測紀錄 CSV", data=saved["result"]["log"].to_csv(index=False).encode("utf-8-sig"),
                        file_name=f"seven_line_{saved['symbol']}_{saved['start']}_{saved['end']}.csv", mime="text/csv")
+
+    lao_result = saved["lao_result"]
+    with st.expander("查看老王逐日買賣與持股水位紀錄"):
+        log = pd.DataFrame(lao_result["log_rows"], columns=lao_result["log_columns"])
+        st.table(log.style.set_properties(**{"white-space": "normal", "overflow-wrap": "anywhere"}).hide(axis="index"))
+    st.download_button("下載老王回測紀錄 CSV", data=lao_result["log_csv"],
+                       file_name=f"laowang_{saved['symbol']}_{saved['start']}_{saved['end']}.csv", mime="text/csv")
